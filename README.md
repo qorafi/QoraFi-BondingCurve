@@ -1,6 +1,6 @@
 # QoraFi Bondig Curve Protocol
 
-![QoraFi Logo](https://placehold.co/600x300/1a202c/ffffff?text=QoraFi+Protocol)
+![QoraFi Logo](<img width="2000" height="600" alt="curve" src="https://github.com/user-attachments/assets/8affa719-94b2-447c-9938-6a0d134ef4f1" />)
 
 **A decentralized, secure, and transparent ecosystem for liquidity bootstrapping, staking, and stablecoin minting for the QoraFi token.**
 
