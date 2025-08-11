@@ -1,0 +1,54 @@
+// config/deployment-params.json
+{
+  "security": {
+    "mevProtection": {
+      "minDepositInterval": 5,
+      "maxDepositPerBlock": "50000000000",
+      "maxDepositPerUser": "25000000000"
+    },
+    "circuitBreaker": {
+      "volumeThreshold": "100000000000",
+      "cooldownPeriod": 7200,
+      "windowDuration": 3600
+    },
+    "newTokenProtection": {
+      "enabled": true,
+      "maxGasPrice": "20000000000",
+      "maxSingleDeposit": "5000000000",
+      "emergencyTransactionDelay": 86400
+    }
+  },
+  "oracle": {
+    "priceValidation": {
+      "maxPriceChangeBPS": 2000,
+      "maxMarketCapGrowthBPS": 3000,
+      "priceImpactThreshold": 1000,
+      "minTimeBetweenUpdates": 300
+    },
+    "liquidity": {
+      "minimumUsdtLiquidity": "10000000000",
+      "minLpLiquidity": "1000000000000000000000"
+    },
+    "marketCap": {
+      "lowerLimit": "100000000000000000000000",
+      "upperLimit": "10000000000000000000000000"
+    },
+    "flashLoanProtection": {
+      "maxUpdatesPerBlock": 1,
+      "detectionWindow": 3
+    }
+  },
+  "governance": {
+    "multiSig": {
+      "requiredSignatures": 2,
+      "proposalValidityPeriod": 604800
+    },
+    "emergencyDelay": 86400,
+    "roles": {
+      "governance": [],
+      "emergency": [],
+      "paramManager": [],
+      "monitor": []
+    }
+  }
+}
