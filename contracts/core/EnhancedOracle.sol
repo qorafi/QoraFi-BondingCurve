@@ -9,8 +9,8 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 
 // Import our modular libraries
-import "./OracleLibraries.sol";
-import "./Interfaces.sol";
+import "../libraries/OracleLibraries.sol";
+import "../interfaces/Interfaces.sol";
 
 /**
  * @title EnhancedOracle
@@ -450,7 +450,7 @@ contract EnhancedOracle is
         );
     }
 
-   // Add this to the end of your EnhancedOracle.sol file (the file is cut off)
+   // Add this to complete the EnhancedOracle.sol file
     
     function forceUpdatePrice(uint256 _newPrice) external override onlyRole(GOVERNANCE_ROLE) {
         require(_newPrice > 0, "Invalid price");
@@ -476,159 +476,6 @@ contract EnhancedOracle is
         uint256 newValidCount = twapObservations.invalidateObservation(index, validObservationCount);
         validObservationCount = newValidCount;
         emit ObservationInvalidated(index, twapObservations[index].timestamp, reason);
-    }
-
-    function setLiquidityRequirements(
-        uint256 _minimumUsdtLiquidity,
-        uint256 _minLpLiquidity
-    ) external onlyRole(GOVERNANCE_ROLE) {
-        require(_minimumUsdtLiquidity > 0 && _minLpLiquidity > 0, "Invalid liquidity requirements");
-        minimumUsdtLiquidity = _minimumUsdtLiquidity;
-        minLpLiquidity = _minLpLiquidity;
-    }
-
-    function setMarketCapLimits(
-        uint256 _mcLower,
-        uint256 _mcUpper
-    ) external onlyRole(GOVERNANCE_ROLE) {
-        require(_mcLower > 0 && _mcUpper > _mcLower, "Invalid market cap limits");
-        mcLowerLimit = _mcLower;
-        mcUpperLimit = _mcUpper;
-    }
-
-    function setUpdateParameters(
-        uint256 _maxPriceChangeBPS,
-        uint256 _maxMarketCapGrowthBPS,
-        uint256 _minUpdateInterval
-    ) external onlyRole(GOVERNANCE_ROLE) {
-        require(_maxPriceChangeBPS <= 5000, "Invalid price change limit"); // Max 50%
-        require(_maxMarketCapGrowthBPS <= 10000, "Invalid growth limit"); // Max 100%
-        require(_minUpdateInterval >= 1 minutes, "Invalid interval");
-        
-        maxPriceChangeBPS = _maxPriceChangeBPS;
-        maxMarketCapGrowthBPS = _maxMarketCapGrowthBPS;
-        minOracleUpdateInterval = _minUpdateInterval;
-    }
-
-    function setFlashLoanProtection(
-        uint256 _maxUpdatesPerBlock,
-        uint256 _detectionWindow
-    ) external onlyRole(GOVERNANCE_ROLE) {
-        require(_maxUpdatesPerBlock > 0 && _detectionWindow > 0, "Invalid flash loan settings");
-        maxUpdatesPerBlock = _maxUpdatesPerBlock;
-        flashLoanDetectionWindow = _detectionWindow;
-    }
-
-    function emergencyResetObservations() external onlyRole(GOVERNANCE_ROLE) {
-        // Clear existing observations and reinitialize
-        delete twapObservations;
-        observationIndex = 0;
-        validObservationCount = 0;
-        
-        // Reinitialize with current data
-        _initializeFirstObservation();
-    }
-
-    // --- ADVANCED VIEW FUNCTIONS ---
-    function getFlashLoanStats(uint256 blockNumber) external view returns (
-        uint256 updatesInBlock,
-        uint256 updatesInWindow,
-        bool isRisky
-    ) {
-        (updatesInBlock, updatesInWindow) = FlashLoanDetectionLib.getUpdateStats(
-            blockPriceUpdates,
-            blockNumber,
-            flashLoanDetectionWindow
-        );
-        
-        isRisky = updatesInBlock >= maxUpdatesPerBlock || 
-                 updatesInWindow > maxUpdatesPerBlock * flashLoanDetectionWindow;
-    }
-
-    function getLiquidityChangeRate() external view returns (uint256 changeRate) {
-        if (twapObservations.length < 2) return 0;
-        
-        TWAPLib.TWAPObservation memory latest = twapObservations.getLatestObservation();
-        TWAPLib.TWAPObservation memory previous = twapObservations[twapObservations.length - 2];
-        
-        return LiquidityMonitorLib.calculateLiquidityChange(
-            previous.liquiditySnapshot,
-            latest.liquiditySnapshot
-        );
-    }
-
-    function getOracleHealth() external view returns (
-        bool isHealthy,
-        string memory reason,
-        uint256 lastUpdate,
-        uint256 validObservations
-    ) {
-        isHealthy = this.isHealthy();
-        lastUpdate = lastOracleUpdateTime;
-        validObservations = validObservationCount;
-        
-        if (!isHealthy) {
-            if (emergencyMode) {
-                reason = "Emergency mode active";
-            } else if (block.timestamp - lastOracleUpdateTime > TWAPLib.MAX_OBSERVATION_AGE) {
-                reason = "Stale data";
-            } else if (validObservationCount < TWAPLib.MIN_TWAP_OBSERVATIONS) {
-                reason = "Insufficient observations";
-            } else {
-                reason = "Liquidity issues";
-            }
-        } else {
-            reason = "Healthy";
-        }
-    }
-
-    function getMarketMetrics() external view returns (
-        uint256 currentPrice,
-        uint256 marketCap,
-        uint256 priceChange24h,
-        uint256 volumeWeightedPrice,
-        uint256 liquidityUSD
-    ) {
-        currentPrice = this.getCurrentPrice();
-        marketCap = cachedMarketCap;
-        
-        // Simplified 24h change calculation
-        if (twapObservations.length >= 2) {
-            TWAPLib.TWAPObservation memory latest = twapObservations.getLatestObservation();
-            TWAPLib.TWAPObservation memory dayAgo = twapObservations[0]; // Simplified
-            
-            if (latest.timestamp >= dayAgo.timestamp + 24 hours) {
-                uint256 oldPrice = _calculateObservationPrice(dayAgo);
-                priceChange24h = oldPrice > 0 ? PriceValidationLib.calculatePriceImpact(oldPrice, currentPrice) : 0;
-            }
-        }
-        
-        volumeWeightedPrice = currentPrice; // Simplified
-        
-        (uint112 reserve0, uint112 reserve1,) = lpPair.getReserves();
-        liquidityUSD = LiquidityMonitorLib.getCurrentUSDTLiquidity(reserve0, reserve1, qorafiIsToken0InPair);
-    }
-
-    function getObservationWindow(uint256 start, uint256 count) external view returns (
-        TWAPLib.TWAPObservation[] memory observations
-    ) {
-        require(start < twapObservations.length, "Start index out of bounds");
-        
-        uint256 end = start + count;
-        if (end > twapObservations.length) {
-            end = twapObservations.length;
-        }
-        
-        observations = new TWAPLib.TWAPObservation[](end - start);
-        for (uint256 i = start; i < end; i++) {
-            observations[i - start] = twapObservations[i];
-        }
-    }
-
-    function _calculateObservationPrice(TWAPLib.TWAPObservation memory obs) internal view returns (uint256) {
-        // Simplified price calculation from observation
-        // In practice, you'd need more sophisticated calculation
-        return qorafiPriceTwap; // Placeholder
     }
 
     // --- UUPS UPGRADE HOOK ---

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import "./CoreSecurityManager.sol";
-import "./SecurityLibraries.sol";
-import "./Interfaces.sol";
+import "../core/CoreSecurityManager.sol";
+import "../libraries/SecurityLibraries.sol";
+import "../interfaces/Interfaces.sol";
 
 /**
  * @title AdvancedSecurityManager

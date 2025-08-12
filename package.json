@@ -9,28 +9,21 @@
     "test:unit": "hardhat test test/unit/**/*.test.js",
     "test:integration": "hardhat test test/integration/**/*.test.js",
     "deploy:localhost": "hardhat run scripts/deploy/01-deploy-libraries.js --network localhost",
-    "deploy:testnet": "hardhat run scripts/deploy/01-deploy-libraries.js --network bscTestnet",
-    "deploy:mainnet": "hardhat run scripts/deploy/01-deploy-libraries.js --network bscMainnet",
-    "verify": "hardhat run scripts/deploy/05-verify-contracts.js",
-    "security": "slither . --config-file slither.config.json",
     "coverage": "hardhat coverage",
-    "gas-report": "REPORT_GAS=true hardhat test",
-    "deploy:all": "npm run deploy:libraries && npm run deploy:core && npm run deploy:advanced",
-    "setup": "npm run compile && npm run deploy:localhost && npm run setup:params",
-    "setup:params": "hardhat run scripts/interactions/setup-parameters.js --network localhost"
+    "gas-report": "REPORT_GAS=true hardhat test"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts": "^5.0.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.0",
+    "@openzeppelin/hardhat-upgrades": "^3.0.0",
     "hardhat": "^2.19.0",
     "hardhat-deploy": "^0.11.45",
     "hardhat-gas-reporter": "^1.0.9",
     "solidity-coverage": "^0.8.5",
-    "@nomiclabs/hardhat-etherscan": "^3.1.7",
-    "dotenv": "^16.3.1",
     "chai": "^4.3.10",
-    "mocha": "^10.2.0"
+    "mocha": "^10.2.0",
+    "dotenv": "^16.3.1"
   },
   "dependencies": {
     "ethers": "^6.8.0"

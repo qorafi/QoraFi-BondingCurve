@@ -1,4 +1,4 @@
-// slither.config.json
+
 {
   "filter_paths": [
     "node_modules",

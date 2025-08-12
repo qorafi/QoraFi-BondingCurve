@@ -5,8 +5,8 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "./SecurityLibraries.sol";
-import "./Interfaces.sol";
+import "../libraries/SecurityLibraries.sol";
+import "../interfaces/Interfaces.sol";
 
 /**
  * @title SecurityGovernance
