@@ -12,7 +12,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "../libraries/SecurityLibraries.sol";
 import "../libraries/UtilityLibraries.sol";
-import "../interfaces/Interfaces.sol";
+import "../interfaces/SecurityInterfaces.sol";
 
 /**
  * @title EnhancedBondingCurve

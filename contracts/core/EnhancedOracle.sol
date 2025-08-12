@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 
 // Import our modular libraries
 import "../libraries/OracleLibraries.sol";
-import "../interfaces/Interfaces.sol";
+import "../interfaces/SecurityInterfaces.sol";
 
 /**
  * @title EnhancedOracle

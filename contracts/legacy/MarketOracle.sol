@@ -104,7 +104,7 @@ contract MarketOracle is Initializable, AccessControlUpgradeable, ReentrancyGuar
     event ObservationInvalidated(uint256 index, uint32 timestamp, string reason);
     event LiquidityThresholdBreached(uint256 currentLiquidity, uint256 minimumRequired);
     event PriceImpactDetected(uint256 priceImpact, uint256 threshold);
-    event FlashLoanDetected(uint256 blockNumber, uint256 updateCount);
+    event FlashLoanAttackDetected(uint256 blockNumber, uint256 updateCount);
     event NewTokenModeToggled(bool enabled);
 
     // --- ERRORS ---
@@ -125,9 +125,9 @@ contract MarketOracle is Initializable, AccessControlUpgradeable, ReentrancyGuar
     error InsufficientLiquidity();
     error EmergencyModeActive();
     error RolesSameAddress();
-    error PriceImpactTooHigh();
-    error FlashLoanDetected();
-    error TooManyUpdatesPerBlock();
+    error PriceImpactExceedsThreshold();
+    error FlashLoanDetectionTriggered();
+    error TooManyBlockUpdates();
     error LiquidityBelowThreshold();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -211,8 +211,8 @@ contract MarketOracle is Initializable, AccessControlUpgradeable, ReentrancyGuar
         if (newTokenMode) {
             blockPriceUpdates[block.number]++;
             if (blockPriceUpdates[block.number] > maxUpdatesPerBlock) {
-                emit FlashLoanDetected(block.number, blockPriceUpdates[block.number]);
-                revert TooManyUpdatesPerBlock();
+                emit FlashLoanAttackDetected(block.number, blockPriceUpdates[block.number]);
+                revert TooManyBlockUpdates();
             }
         }
         
@@ -225,7 +225,15 @@ contract MarketOracle is Initializable, AccessControlUpgradeable, ReentrancyGuar
         // Enhanced price validation for new token
         if (qorafiPriceTwap > 0) {
             _validatePriceChange(qorafiPriceTwap, newPrice);
-            _validatePriceImpact(newPrice);
+            
+            // Check price impact separately and emit event here (outside view function)
+            if (priceValidation.lastValidatedPrice > 0) {
+                uint256 priceImpact = _calculatePriceImpact(priceValidation.lastValidatedPrice, newPrice);
+                if (priceImpact > priceValidation.priceImpactThreshold) {
+                    emit PriceImpactDetected(priceImpact, priceValidation.priceImpactThreshold);
+                    revert PriceImpactExceedsThreshold();
+                }
+            }
         }
 
         uint256 totalSupply = qorafiToken.totalSupply();
@@ -271,8 +279,7 @@ contract MarketOracle is Initializable, AccessControlUpgradeable, ReentrancyGuar
         uint256 priceImpact = _calculatePriceImpact(priceValidation.lastValidatedPrice, newPrice);
         
         if (priceImpact > priceValidation.priceImpactThreshold) {
-            emit PriceImpactDetected(priceImpact, priceValidation.priceImpactThreshold);
-            revert PriceImpactTooHigh();
+            revert PriceImpactExceedsThreshold();
         }
     }
 
@@ -313,13 +320,18 @@ contract MarketOracle is Initializable, AccessControlUpgradeable, ReentrancyGuar
         if (validObservationCount < MIN_TWAP_OBSERVATIONS) return false;
         
         // Check liquidity health
-        try this._getCurrentLiquidityUSDT() returns (uint256 liquidity) {
+        try this.getCurrentLiquidityUSDTExternal() returns (uint256 liquidity) {
             if (liquidity < minimumUsdtLiquidity) return false;
         } catch {
             return false;
         }
         
         return true;
+    }
+
+    // External wrapper for internal function to make it accessible for try/catch
+    function getCurrentLiquidityUSDTExternal() external view returns (uint256) {
+        return _getCurrentLiquidityUSDT();
     }
     
     function _getEnhancedTWAPPrice() private view returns (uint256) {

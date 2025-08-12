@@ -31,6 +31,81 @@ library TWAPLib {
     uint256 public constant MIN_OBSERVATION_INTERVAL = 5 minutes;
 
     /**
+     * @notice Calculates price for a specific time period
+     * @param priceCumulativeDiff Price cumulative difference
+     * @param timeElapsed Time elapsed in the period
+     * @param qorafiIsToken0 Whether Qorafi is token0
+     * @param usdtDecimals USDT decimals
+     * @return periodPrice Price for the period
+     */
+    function calculatePeriodPrice(
+        uint256 priceCumulativeDiff,
+        uint32 timeElapsed,
+        bool qorafiIsToken0,
+        uint8 usdtDecimals
+    ) internal pure returns (uint256 periodPrice) {
+        if (timeElapsed == 0) revert InvalidTimeElapsed();
+        
+        unchecked {
+            uint256 avgPriceQ112 = priceCumulativeDiff / timeElapsed;
+            
+            if (qorafiIsToken0) {
+                if (avgPriceQ112 == 0) return 0;
+                return Math.mulDiv(uint256(2**112), 10**usdtDecimals, avgPriceQ112);
+            } else {
+                return Math.mulDiv(avgPriceQ112, 10**usdtDecimals, uint256(2**112));
+            }
+        }
+    }
+
+    /**
+     * @notice Invalidates an observation
+     * @param observations Array of observations
+     * @param index Index to invalidate
+     * @param validCount Current valid count
+     * @return newValidCount Updated valid count
+     */
+    function invalidateObservation(
+        TWAPObservation[] storage observations,
+        uint256 index,
+        uint256 validCount
+    ) internal returns (uint256 newValidCount) {
+        require(index < observations.length, "Index out of bounds");
+        if (observations[index].isValid) {
+            observations[index].isValid = false;
+            return validCount - 1;
+        }
+        return validCount;
+    }
+
+    /**
+     * @notice Gets the latest valid observation
+     * @param observations Array of observations
+     * @return observation Latest observation
+     */
+    function getLatestObservation(TWAPObservation[] storage observations) internal view returns (TWAPObservation memory observation) {
+        if (observations.length == 0) revert NoObservations();
+        return observations[observations.length - 1];
+    }
+}
+
+// --- PRICE VALIDATION LIBRARY ---
+library PriceValidationLib {
+    struct PriceValidationData {
+        uint256 lastValidatedPrice;
+        uint256 lastValidationTime;
+        uint256 priceImpactThreshold;
+        uint256 maxPriceChangePerUpdate;
+        uint256 minTimeBetweenUpdates;
+    }
+
+    // Price validation errors
+    error PriceChangeTooLarge();
+    error PriceImpactTooHigh();
+    error InvalidPrices();
+    error MarketCapGrowthTooLarge();
+
+    /**
      * @notice Updates price validation parameters
      * @param validation Price validation data
      * @param priceImpactThreshold New price impact threshold
@@ -46,6 +121,80 @@ library TWAPLib {
         validation.priceImpactThreshold = priceImpactThreshold;
         validation.maxPriceChangePerUpdate = maxPriceChangePerUpdate;
         validation.minTimeBetweenUpdates = minTimeBetweenUpdates;
+    }
+
+    /**
+     * @notice Validates price change between updates
+     * @param validation Price validation data
+     * @param oldPrice Previous price
+     * @param newPrice New price
+     * @param newTokenMode Whether new token mode is active
+     * @param maxChangeBPS Maximum change in BPS
+     */
+    function validatePriceChange(
+        PriceValidationData storage validation,
+        uint256 oldPrice,
+        uint256 newPrice,
+        bool newTokenMode,
+        uint256 maxChangeBPS
+    ) internal {
+        if (oldPrice == 0 || newPrice == 0) revert InvalidPrices();
+        
+        uint256 priceDiff = newPrice > oldPrice ? newPrice - oldPrice : oldPrice - newPrice;
+        
+        // Use new token specific max change if in new token mode
+        uint256 maxChange = newTokenMode ? validation.maxPriceChangePerUpdate : maxChangeBPS;
+        uint256 changePercent = Math.mulDiv(priceDiff, 10000, oldPrice);
+        
+        if (changePercent > maxChange) revert PriceChangeTooLarge();
+        
+        // Update validation data
+        validation.lastValidatedPrice = newPrice;
+        validation.lastValidationTime = block.timestamp;
+    }
+
+    /**
+     * @notice Validates price impact
+     * @param validation Price validation data
+     * @param newPrice New price to validate
+     */
+    function validatePriceImpact(PriceValidationData storage validation, uint256 newPrice) internal view {
+        if (validation.lastValidatedPrice == 0) return;
+        
+        // Calculate price impact from last validated price
+        uint256 priceImpact = calculatePriceImpact(validation.lastValidatedPrice, newPrice);
+        
+        if (priceImpact > validation.priceImpactThreshold) {
+            revert PriceImpactTooHigh();
+        }
+    }
+
+    /**
+     * @notice Validates market cap growth
+     * @param oldCap Previous market cap
+     * @param newCap New market cap
+     * @param maxGrowthBPS Maximum growth in BPS
+     */
+    function validateMarketCapGrowth(uint256 oldCap, uint256 newCap, uint256 maxGrowthBPS) internal pure {
+        if (oldCap == 0 || newCap == 0) revert InvalidPrices();
+        
+        if (newCap > oldCap) {
+            uint256 growthPercent = Math.mulDiv(newCap - oldCap, 10000, oldCap);
+            if (growthPercent > maxGrowthBPS) revert MarketCapGrowthTooLarge();
+        }
+    }
+
+    /**
+     * @notice Calculates price impact between two prices
+     * @param oldPrice Previous price
+     * @param newPrice New price
+     * @return impact Price impact in BPS
+     */
+    function calculatePriceImpact(uint256 oldPrice, uint256 newPrice) internal pure returns (uint256 impact) {
+        if (oldPrice == 0 || newPrice == 0) return 0;
+        
+        uint256 priceDiff = newPrice > oldPrice ? newPrice - oldPrice : oldPrice - newPrice;
+        return Math.mulDiv(priceDiff, 10000, oldPrice);
     }
 }
 
@@ -282,283 +431,4 @@ library CumulativePriceLib {
             }
         }
     }
-}* @notice Adds a new TWAP observation
-     * @param observations Array of TWAP observations
-     * @param observationIndex Current observation index
-     * @param validCount Number of valid observations
-     * @param price0Cumulative Price0 cumulative value
-     * @param price1Cumulative Price1 cumulative value
-     * @param timestamp Current timestamp
-     * @param liquiditySnapshot Current liquidity snapshot
-     * @return newIndex New observation index
-     * @return newValidCount New valid count
-     */
-    function addObservation(
-        TWAPObservation[] storage observations,
-        uint256 observationIndex,
-        uint256 validCount,
-        uint256 price0Cumulative,
-        uint256 price1Cumulative,
-        uint32 timestamp,
-        uint256 liquiditySnapshot
-    ) internal returns (uint256 newIndex, uint256 newValidCount) {
-        // Validate time progression
-        if (observations.length > 0) {
-            uint32 lastTimestamp = observations[observations.length - 1].timestamp;
-            require(timestamp > lastTimestamp, "No time elapsed");
-            require(timestamp - lastTimestamp >= MIN_OBSERVATION_INTERVAL, "Update too frequent");
-        }
-        
-        if (observations.length < MAX_TWAP_OBSERVATIONS) {
-            observations.push(TWAPObservation({
-                price0Cumulative: price0Cumulative,
-                price1Cumulative: price1Cumulative,
-                timestamp: timestamp,
-                isValid: true,
-                liquiditySnapshot: liquiditySnapshot
-            }));
-            newValidCount = validCount + 1;
-            newIndex = observationIndex;
-        } else {
-            if (!observations[observationIndex].isValid) {
-                newValidCount = validCount + 1;
-            } else {
-                newValidCount = validCount;
-            }
-            
-            newIndex = (observationIndex + 1) % MAX_TWAP_OBSERVATIONS;
-            
-            observations[observationIndex] = TWAPObservation({
-                price0Cumulative: price0Cumulative,
-                price1Cumulative: price1Cumulative,
-                timestamp: timestamp,
-                isValid: true,
-                liquiditySnapshot: liquiditySnapshot
-            });
-        }
-    }
-
-    /**
-     * @notice Calculates enhanced TWAP price with liquidity weighting
-     * @param observations Array of TWAP observations
-     * @param qorafiIsToken0 Whether Qorafi is token0 in the pair
-     * @param usdtDecimals USDT token decimals
-     * @param newTokenMode Whether new token mode is active
-     * @return twapPrice Calculated TWAP price
-     */
-    function calculateEnhancedTWAP(
-        TWAPObservation[] storage observations,
-        bool qorafiIsToken0,
-        uint8 usdtDecimals,
-        bool newTokenMode
-    ) internal view returns (uint256 twapPrice) {
-        uint256 observationsLength = observations.length;
-        if (observationsLength < MIN_TWAP_OBSERVATIONS) revert InsufficientObservations();
-        
-        uint32 currentTime = uint32(block.timestamp);
-        uint256 totalWeightedPrice = 0;
-        uint256 totalTimeWeight = 0;
-        
-        TWAPObservation memory previous = observations[0];
-        
-        for (uint256 i = 1; i < observationsLength; i++) {
-            TWAPObservation memory current = observations[i];
-            
-            if (!current.isValid || !previous.isValid) {
-                previous = current;
-                continue;
-            }
-            
-            // Enhanced validation for observation age and quality
-            if (currentTime - current.timestamp > MAX_OBSERVATION_AGE || 
-                currentTime - previous.timestamp > MAX_OBSERVATION_AGE) {
-                previous = current;
-                continue;
-            }
-            
-            uint32 timeElapsed = current.timestamp - previous.timestamp;
-            
-            // Enforce minimum time between observations to prevent manipulation
-            if (timeElapsed < MIN_OBSERVATION_INTERVAL) {
-                previous = current;
-                continue;
-            }
-            
-            // Check liquidity consistency between observations for new tokens
-            if (newTokenMode && previous.liquiditySnapshot > 0 && current.liquiditySnapshot > 0) {
-                uint256 liquidityChange = current.liquiditySnapshot > previous.liquiditySnapshot 
-                    ? current.liquiditySnapshot - previous.liquiditySnapshot 
-                    : previous.liquiditySnapshot - current.liquiditySnapshot;
-                
-                // If liquidity changed by more than 50%, reduce weight
-                if (Math.mulDiv(liquidityChange, 10000, previous.liquiditySnapshot) > 5000) {
-                    timeElapsed = timeElapsed / 2;
-                }
-            }
-            
-            uint256 priceCumulativeDiff = qorafiIsToken0 ? 
-                (current.price0Cumulative - previous.price0Cumulative) : 
-                (current.price1Cumulative - previous.price1Cumulative);
-            
-            uint256 periodPrice = _calculatePeriodPrice(priceCumulativeDiff, timeElapsed, qorafiIsToken0, usdtDecimals);
-            
-            totalWeightedPrice += periodPrice * timeElapsed;
-            totalTimeWeight += timeElapsed;
-            
-            previous = current;
-        }
-        
-        if (totalTimeWeight == 0) revert StaleObservations();
-        return totalWeightedPrice / totalTimeWeight;
-    }
-
-    /**
-     * @notice Calculates price for a specific time period
-     * @param priceCumulativeDiff Price cumulative difference
-     * @param timeElapsed Time elapsed in the period
-     * @param qorafiIsToken0 Whether Qorafi is token0
-     * @param usdtDecimals USDT decimals
-     * @return periodPrice Price for the period
-     */
-    function _calculatePeriodPrice(
-        uint256 priceCumulativeDiff,
-        uint32 timeElapsed,
-        bool qorafiIsToken0,
-        uint8 usdtDecimals
-    ) private pure returns (uint256 periodPrice) {
-        if (timeElapsed == 0) revert InvalidTimeElapsed();
-        
-        unchecked {
-            uint256 avgPriceQ112 = priceCumulativeDiff / timeElapsed;
-            
-            if (qorafiIsToken0) {
-                if (avgPriceQ112 == 0) return 0;
-                return Math.mulDiv(uint256(2**112), 10**usdtDecimals, avgPriceQ112);
-            } else {
-                return Math.mulDiv(avgPriceQ112, 10**usdtDecimals, uint256(2**112));
-            }
-        }
-    }
-
-    /**
-     * @notice Invalidates an observation
-     * @param observations Array of observations
-     * @param index Index to invalidate
-     * @param validCount Current valid count
-     * @return newValidCount Updated valid count
-     */
-    function invalidateObservation(
-        TWAPObservation[] storage observations,
-        uint256 index,
-        uint256 validCount
-    ) internal returns (uint256 newValidCount) {
-        require(index < observations.length, "Index out of bounds");
-        if (observations[index].isValid) {
-            observations[index].isValid = false;
-            return validCount - 1;
-        }
-        return validCount;
-    }
-
-    /**
-     * @notice Gets the latest valid observation
-     * @param observations Array of observations
-     * @return observation Latest observation
-     */
-    function getLatestObservation(TWAPObservation[] storage observations) internal view returns (TWAPObservation memory observation) {
-        if (observations.length == 0) revert NoObservations();
-        return observations[observations.length - 1];
-    }
 }
-
-// --- PRICE VALIDATION LIBRARY ---
-library PriceValidationLib {
-    struct PriceValidationData {
-        uint256 lastValidatedPrice;
-        uint256 lastValidationTime;
-        uint256 priceImpactThreshold;
-        uint256 maxPriceChangePerUpdate;
-        uint256 minTimeBetweenUpdates;
-    }
-
-    // Price validation errors
-    error PriceChangeTooLarge();
-    error PriceImpactTooHigh();
-    error InvalidPrices();
-    error MarketCapGrowthTooLarge();
-
-    /**
-     * @notice Validates price change between updates
-     * @param validation Price validation data
-     * @param oldPrice Previous price
-     * @param newPrice New price
-     * @param newTokenMode Whether new token mode is active
-     * @param maxChangeBPS Maximum change in BPS
-     */
-    function validatePriceChange(
-        PriceValidationData storage validation,
-        uint256 oldPrice,
-        uint256 newPrice,
-        bool newTokenMode,
-        uint256 maxChangeBPS
-    ) internal {
-        if (oldPrice == 0 || newPrice == 0) revert InvalidPrices();
-        
-        uint256 priceDiff = newPrice > oldPrice ? newPrice - oldPrice : oldPrice - newPrice;
-        
-        // Use new token specific max change if in new token mode
-        uint256 maxChange = newTokenMode ? validation.maxPriceChangePerUpdate : maxChangeBPS;
-        uint256 changePercent = Math.mulDiv(priceDiff, 10000, oldPrice);
-        
-        if (changePercent > maxChange) revert PriceChangeTooLarge();
-        
-        // Update validation data
-        validation.lastValidatedPrice = newPrice;
-        validation.lastValidationTime = block.timestamp;
-    }
-
-    /**
-     * @notice Validates price impact
-     * @param validation Price validation data
-     * @param newPrice New price to validate
-     */
-    function validatePriceImpact(PriceValidationData storage validation, uint256 newPrice) internal view {
-        if (validation.lastValidatedPrice == 0) return;
-        
-        // Calculate price impact from last validated price
-        uint256 priceImpact = calculatePriceImpact(validation.lastValidatedPrice, newPrice);
-        
-        if (priceImpact > validation.priceImpactThreshold) {
-            revert PriceImpactTooHigh();
-        }
-    }
-
-    /**
-     * @notice Validates market cap growth
-     * @param oldCap Previous market cap
-     * @param newCap New market cap
-     * @param maxGrowthBPS Maximum growth in BPS
-     */
-    function validateMarketCapGrowth(uint256 oldCap, uint256 newCap, uint256 maxGrowthBPS) internal pure {
-        if (oldCap == 0 || newCap == 0) revert InvalidPrices();
-        
-        if (newCap > oldCap) {
-            uint256 growthPercent = Math.mulDiv(newCap - oldCap, 10000, oldCap);
-            if (growthPercent > maxGrowthBPS) revert MarketCapGrowthTooLarge();
-        }
-    }
-
-    /**
-     * @notice Calculates price impact between two prices
-     * @param oldPrice Previous price
-     * @param newPrice New price
-     * @return impact Price impact in BPS
-     */
-    function calculatePriceImpact(uint256 oldPrice, uint256 newPrice) internal pure returns (uint256 impact) {
-        if (oldPrice == 0 || newPrice == 0) return 0;
-        
-        uint256 priceDiff = newPrice > oldPrice ? newPrice - oldPrice : oldPrice - newPrice;
-        return Math.mulDiv(priceDiff, 10000, oldPrice);
-    }
-
-    /**

@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // Import our modular libraries
 import "../libraries/SecurityLibraries.sol";
-import "../interfaces/Interfaces.sol";
+import "../interfaces/SecurityInterfaces.sol";
 
 /**
  * @title CoreSecurityManager
@@ -36,8 +36,8 @@ contract CoreSecurityManager is
     bytes32 public constant MONITOR_ROLE = keccak256("MONITOR_ROLE");
 
     // --- STATE ---
-    IERC20Upgradeable public usdtToken;
-    IERC20Upgradeable public qorafiToken;
+    IERC20 public usdtToken;
+    IERC20 public qorafiToken;
     address public treasuryWallet;
 
     MEVLib.MEVProtection internal mevProtection;
@@ -83,8 +83,8 @@ contract CoreSecurityManager is
         ValidationLib.validateAddress(_qorafiTokenAddress);
         ValidationLib.validateAddress(_initialTreasuryWallet);
         
-        usdtToken = IERC20Upgradeable(_usdtTokenAddress);
-        qorafiToken = IERC20Upgradeable(_qorafiTokenAddress);
+        usdtToken = IERC20(_usdtTokenAddress);
+        qorafiToken = IERC20(_qorafiTokenAddress);
         treasuryWallet = _initialTreasuryWallet;
 
         _grantRole(GOVERNANCE_ROLE, msg.sender);

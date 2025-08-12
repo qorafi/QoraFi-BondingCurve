@@ -1,14 +1,13 @@
-// contracts/legacy/BondingCurve.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/math/MathUpgradeable.sol";
+import "@openzeppelin/contracts/interfaces/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 /**
  * @title BondingCurve (Legacy Implementation)
@@ -46,8 +45,8 @@ interface ILedger {
 }
 
 contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
-    using SafeERC20Upgradeable for IERC20Upgradeable;
-    using MathUpgradeable for uint256;
+    using SafeERC20 for IERC20;
+    using Math for uint256;
 
     // --- CONSTANTS ---
     bytes32 public constant GOVERNANCE_ROLE = DEFAULT_ADMIN_ROLE;
@@ -60,8 +59,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
     uint256 private constant MAX_BPS = 10000;
 
     // --- STATE VARIABLES ---
-    IERC20Upgradeable public usdtToken;
-    IERC20Upgradeable public qorafiToken;
+    IERC20 public usdtToken;
+    IERC20 public qorafiToken;
     ISecurityManager public securityManager;
     IOracle public oracle;
     IRouter public router;
@@ -115,8 +114,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(EMERGENCY_ROLE, msg.sender);
 
-        usdtToken = IERC20Upgradeable(_usdtToken);
-        qorafiToken = IERC20Upgradeable(_qorafiToken);
+        usdtToken = IERC20(_usdtToken);
+        qorafiToken = IERC20(_qorafiToken);
         router = IRouter(_router);
         securityManager = ISecurityManager(_securityManager);
         ledger = ILedger(_ledger);
@@ -240,11 +239,11 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
         require(securityManager.isSupportedZapToken(_tokenIn), "Token not supported");
         require(_amountIn > 0, "Invalid amount");
 
-        IERC20Upgradeable(_tokenIn).safeTransferFrom(msg.sender, address(this), _amountIn);
-        IERC20Upgradeable(_tokenIn).safeIncreaseAllowance(address(router), _amountIn);
+        IERC20(_tokenIn).safeTransferFrom(msg.sender, address(this), _amountIn);
+        IERC20(_tokenIn).safeIncreaseAllowance(address(router), _amountIn);
         
         uint256 usdtReceived = _swapTokenToUSDT(_tokenIn, _amountIn, _minUsdtOut, _deadline);
-        IERC20Upgradeable(_tokenIn).safeDecreaseAllowance(address(router), _amountIn);
+        IERC20(_tokenIn).safeDecreaseAllowance(address(router), _amountIn);
         
         // Apply security checks
         if (usdtReceived < MIN_DEPOSIT || usdtReceived > MAX_DEPOSIT) revert InvalidAmount();
@@ -294,7 +293,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
         }
 
         // Split amount
-        uint256 usdtForLiquidity = MathUpgradeable.mulDiv(_amountUSDT, liquidityRatioBPS, MAX_BPS);
+        uint256 usdtForLiquidity = Math.mulDiv(_amountUSDT, liquidityRatioBPS, MAX_BPS);
         uint256 usdtForSwap = _amountUSDT - usdtForLiquidity;
 
         // Execute swap
@@ -318,7 +317,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
         if (expectedQorafi == 0) revert SwapFailed();
 
         // Calculate minimum with slippage
-        uint256 minWithSlippage = MathUpgradeable.mulDiv(expectedQorafi, MAX_BPS - maxSlippageBPS, MAX_BPS);
+        uint256 minWithSlippage = Math.mulDiv(expectedQorafi, MAX_BPS - maxSlippageBPS, MAX_BPS);
         uint256 actualMin = minQorafiOut > minWithSlippage ? minQorafiOut : minWithSlippage;
 
         // SAFE ALLOWANCE PATTERN - Set exact amount, always reset to 0
@@ -376,8 +375,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
             address(qorafiToken),
             usdtAmount,
             qorafiAmount,
-            MathUpgradeable.mulDiv(usdtAmount, MAX_BPS - slippageBps, MAX_BPS),
-            MathUpgradeable.mulDiv(qorafiAmount, MAX_BPS - slippageBps, MAX_BPS),
+            Math.mulDiv(usdtAmount, MAX_BPS - slippageBps, MAX_BPS),
+            Math.mulDiv(qorafiAmount, MAX_BPS - slippageBps, MAX_BPS),
             msg.sender,
             deadline
         ) returns (uint256 _amountA, uint256 _amountB, uint256 _lpTokens) {
@@ -500,9 +499,9 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
     }
 
     function estimateDeposit(uint256 usdtAmount) external view returns (uint256 estimatedQorafiOut, uint256 estimatedLPTokens) {
-        uint256 usdtForSwap = MathUpgradeable.mulDiv(usdtAmount, MAX_BPS - liquidityRatioBPS, MAX_BPS);
+        uint256 usdtForSwap = Math.mulDiv(usdtAmount, MAX_BPS - liquidityRatioBPS, MAX_BPS);
         estimatedQorafiOut = _getExpectedSwapOutput(usdtForSwap);
-        estimatedLPTokens = MathUpgradeable.mulDiv(usdtAmount - usdtForSwap, 1e18, 1e6); // Simplified
+        estimatedLPTokens = Math.mulDiv(usdtAmount - usdtForSwap, 1e18, 1e6); // Simplified
         
         return (estimatedQorafiOut, estimatedLPTokens);
     }

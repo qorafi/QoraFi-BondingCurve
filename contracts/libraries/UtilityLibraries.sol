@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/math/MathUpgradeable.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title UtilityLibraries
@@ -13,8 +13,8 @@ import "@openzeppelin/contracts-upgradeable/utils/math/MathUpgradeable.sol";
 
 // --- SWAP OPERATIONS LIBRARY ---
 library SwapLib {
-    using SafeERC20Upgradeable for IERC20Upgradeable;
-    using MathUpgradeable for uint256;
+    using SafeERC20 for IERC20;
+    using Math for uint256;
 
     // Swap errors
     error SwapFailed();
@@ -43,7 +43,7 @@ library SwapLib {
         if (router == address(0)) revert InvalidRouter();
         if (amountIn == 0) revert SwapFailed();
 
-        IERC20Upgradeable(tokenIn).safeIncreaseAllowance(router, amountIn);
+        IERC20(tokenIn).safeIncreaseAllowance(router, amountIn);
         
         address[] memory path = new address[](2);
         path[0] = tokenIn;
@@ -58,16 +58,16 @@ library SwapLib {
         ) returns (uint256[] memory amounts) {
             amountOut = amounts[amounts.length - 1];
             if (amountOut < minAmountOut) {
-                IERC20Upgradeable(tokenIn).safeDecreaseAllowance(router, amountIn);
+                IERC20(tokenIn).safeDecreaseAllowance(router, amountIn);
                 revert InsufficientOutput();
             }
         } catch {
-            IERC20Upgradeable(tokenIn).safeDecreaseAllowance(router, amountIn);
+            IERC20(tokenIn).safeDecreaseAllowance(router, amountIn);
             revert SwapFailed();
         }
         
         // Reset allowance after successful swap
-        IERC20Upgradeable(tokenIn).safeDecreaseAllowance(router, amountIn);
+        IERC20(tokenIn).safeDecreaseAllowance(router, amountIn);
     }
 
     /**
@@ -124,7 +124,7 @@ library SwapLib {
         if (router == address(0)) revert InvalidRouter();
         if (amountIn == 0) revert SwapFailed();
 
-        IERC20Upgradeable(tokenIn).safeIncreaseAllowance(router, amountIn);
+        IERC20(tokenIn).safeIncreaseAllowance(router, amountIn);
         
         address[] memory path = new address[](3);
         path[0] = tokenIn;
@@ -140,15 +140,15 @@ library SwapLib {
         ) returns (uint256[] memory amounts) {
             amountOut = amounts[amounts.length - 1];
             if (amountOut < minAmountOut) {
-                IERC20Upgradeable(tokenIn).safeDecreaseAllowance(router, amountIn);
+                IERC20(tokenIn).safeDecreaseAllowance(router, amountIn);
                 revert InsufficientOutput();
             }
         } catch {
-            IERC20Upgradeable(tokenIn).safeDecreaseAllowance(router, amountIn);
+            IERC20(tokenIn).safeDecreaseAllowance(router, amountIn);
             revert SwapFailed();
         }
         
-        IERC20Upgradeable(tokenIn).safeDecreaseAllowance(router, amountIn);
+        IERC20(tokenIn).safeDecreaseAllowance(router, amountIn);
     }
 
     /**
@@ -181,8 +181,8 @@ library SwapLib {
 
 // --- LIQUIDITY OPERATIONS LIBRARY ---
 library LiquidityLib {
-    using SafeERC20Upgradeable for IERC20Upgradeable;
-    using MathUpgradeable for uint256;
+    using SafeERC20 for IERC20;
+    using Math for uint256;
 
     // Liquidity errors
     error LiquidityFailed();
@@ -219,12 +219,12 @@ library LiquidityLib {
         if (slippageBps > MAX_BPS) revert LiquidityFailed();
 
         // Set allowances
-        IERC20Upgradeable(tokenA).safeIncreaseAllowance(router, amountA);
-        IERC20Upgradeable(tokenB).safeIncreaseAllowance(router, amountB);
+        IERC20(tokenA).safeIncreaseAllowance(router, amountA);
+        IERC20(tokenB).safeIncreaseAllowance(router, amountB);
 
         // Calculate minimum amounts with slippage
-        uint256 minAmountA = MathUpgradeable.mulDiv(amountA, MAX_BPS - slippageBps, MAX_BPS);
-        uint256 minAmountB = MathUpgradeable.mulDiv(amountB, MAX_BPS - slippageBps, MAX_BPS);
+        uint256 minAmountA = Math.mulDiv(amountA, MAX_BPS - slippageBps, MAX_BPS);
+        uint256 minAmountB = Math.mulDiv(amountB, MAX_BPS - slippageBps, MAX_BPS);
 
         try IRouter(router).addLiquidity(
             tokenA,
@@ -242,20 +242,20 @@ library LiquidityLib {
             
             if (liquidity == 0) {
                 // Reset allowances before reverting
-                IERC20Upgradeable(tokenA).safeDecreaseAllowance(router, amountA);
-                IERC20Upgradeable(tokenB).safeDecreaseAllowance(router, amountB);
+                IERC20(tokenA).safeDecreaseAllowance(router, amountA);
+                IERC20(tokenB).safeDecreaseAllowance(router, amountB);
                 revert InsufficientLiquidityMinted();
             }
         } catch {
             // Reset allowances on failure
-            IERC20Upgradeable(tokenA).safeDecreaseAllowance(router, amountA);
-            IERC20Upgradeable(tokenB).safeDecreaseAllowance(router, amountB);
+            IERC20(tokenA).safeDecreaseAllowance(router, amountA);
+            IERC20(tokenB).safeDecreaseAllowance(router, amountB);
             revert LiquidityFailed();
         }
 
         // Reset remaining allowances
-        IERC20Upgradeable(tokenA).safeDecreaseAllowance(router, amountA);
-        IERC20Upgradeable(tokenB).safeDecreaseAllowance(router, amountB);
+        IERC20(tokenA).safeDecreaseAllowance(router, amountA);
+        IERC20(tokenB).safeDecreaseAllowance(router, amountB);
     }
 
     /**
@@ -277,11 +277,11 @@ library LiquidityLib {
             return (desiredA, desiredB);
         }
         
-        uint256 amountBOptimal = MathUpgradeable.mulDiv(desiredA, reserveB, reserveA);
+        uint256 amountBOptimal = Math.mulDiv(desiredA, reserveB, reserveA);
         if (amountBOptimal <= desiredB) {
             return (desiredA, amountBOptimal);
         } else {
-            uint256 amountAOptimal = MathUpgradeable.mulDiv(desiredB, reserveA, reserveB);
+            uint256 amountAOptimal = Math.mulDiv(desiredB, reserveA, reserveB);
             return (amountAOptimal, desiredB);
         }
     }
@@ -306,17 +306,17 @@ library LiquidityLib {
         address recipient
     ) internal {
         if (providedA > usedA) {
-            IERC20Upgradeable(tokenA).safeTransfer(recipient, providedA - usedA);
+            IERC20(tokenA).safeTransfer(recipient, providedA - usedA);
         }
         if (providedB > usedB) {
-            IERC20Upgradeable(tokenB).safeTransfer(recipient, providedB - usedB);
+            IERC20(tokenB).safeTransfer(recipient, providedB - usedB);
         }
     }
 }
 
 // --- TOKEN HELPER LIBRARY ---
 library TokenHelperLib {
-    using SafeERC20Upgradeable for IERC20Upgradeable;
+    using SafeERC20 for IERC20;
 
     // Token helper errors
     error TransferFailed();
@@ -339,13 +339,13 @@ library TokenHelperLib {
         if (token == address(0)) revert InvalidToken();
         if (amount == 0) return;
 
-        uint256 balance = IERC20Upgradeable(token).balanceOf(from);
+        uint256 balance = IERC20(token).balanceOf(from);
         if (balance < amount) revert InsufficientBalance();
 
         if (from == address(this)) {
-            IERC20Upgradeable(token).safeTransfer(to, amount);
+            IERC20(token).safeTransfer(to, amount);
         } else {
-            IERC20Upgradeable(token).safeTransferFrom(from, to, amount);
+            IERC20(token).safeTransferFrom(from, to, amount);
         }
     }
 
@@ -358,7 +358,7 @@ library TokenHelperLib {
     function getBalance(address token, address account) internal view returns (uint256 balance) {
         if (token == address(0)) return 0;
         
-        try IERC20Upgradeable(token).balanceOf(account) returns (uint256 bal) {
+        try IERC20(token).balanceOf(account) returns (uint256 bal) {
             return bal;
         } catch {
             return 0;
@@ -375,7 +375,7 @@ library TokenHelperLib {
     function getAllowance(address token, address owner, address spender) internal view returns (uint256 allowance) {
         if (token == address(0)) return 0;
         
-        try IERC20Upgradeable(token).allowance(owner, spender) returns (uint256 allow) {
+        try IERC20(token).allowance(owner, spender) returns (uint256 allow) {
             return allow;
         } catch {
             return 0;
@@ -392,7 +392,7 @@ library TokenHelperLib {
         
         uint256 currentAllowance = getAllowance(token, address(this), spender);
         if (currentAllowance > 0) {
-            IERC20Upgradeable(token).safeDecreaseAllowance(spender, currentAllowance);
+            IERC20(token).safeDecreaseAllowance(spender, currentAllowance);
         }
     }
 
@@ -405,7 +405,7 @@ library TokenHelperLib {
     function setExactAllowance(address token, address spender, uint256 amount) internal {
         resetAllowance(token, spender);
         if (amount > 0) {
-            IERC20Upgradeable(token).safeIncreaseAllowance(spender, amount);
+            IERC20(token).safeIncreaseAllowance(spender, amount);
         }
     }
 
@@ -448,7 +448,7 @@ library TokenHelperLib {
 
 // --- MATH HELPER LIBRARY ---
 library MathHelperLib {
-    using MathUpgradeable for uint256;
+    using Math for uint256;
 
     uint256 public constant MAX_BPS = 10000;
     uint256 public constant PRECISION = 1e18;
@@ -460,7 +460,7 @@ library MathHelperLib {
      * @return result Calculated percentage
      */
     function calculatePercentage(uint256 amount, uint256 bps) internal pure returns (uint256 result) {
-        return MathUpgradeable.mulDiv(amount, bps, MAX_BPS);
+        return Math.mulDiv(amount, bps, MAX_BPS);
     }
 
     /**
@@ -470,7 +470,7 @@ library MathHelperLib {
      * @return minAmount Minimum amount after slippage
      */
     function calculateSlippage(uint256 amount, uint256 slippageBps) internal pure returns (uint256 minAmount) {
-        return MathUpgradeable.mulDiv(amount, MAX_BPS - slippageBps, MAX_BPS);
+        return Math.mulDiv(amount, MAX_BPS - slippageBps, MAX_BPS);
     }
 
     /**
@@ -512,10 +512,10 @@ library MathHelperLib {
         uint256 compoundFactor = PRECISION;
         
         for (uint256 i = 0; i < periods; i++) {
-            compoundFactor = MathUpgradeable.mulDiv(compoundFactor, growthFactor, MAX_BPS);
+            compoundFactor = Math.mulDiv(compoundFactor, growthFactor, MAX_BPS);
         }
         
-        return MathUpgradeable.mulDiv(principal, compoundFactor, PRECISION);
+        return Math.mulDiv(principal, compoundFactor, PRECISION);
     }
 
     /**
@@ -551,7 +551,7 @@ library MathHelperLib {
      */
     function calculateRatio(uint256 numerator, uint256 denominator) internal pure returns (uint256 ratio) {
         if (denominator == 0) return 0;
-        return MathUpgradeable.mulDiv(numerator, MAX_BPS, denominator);
+        return Math.mulDiv(numerator, MAX_BPS, denominator);
     }
 
     /**
@@ -713,7 +713,7 @@ library LedgerLib {
      * @param ledger Ledger contract address
      * @return isValid Whether ledger implements required interface
      */
-    function validateLedgerInterface(address ledger) internal view returns (bool isValid) {
+    function validateLedgerInterface(address ledger) internal returns (bool isValid) {
         if (ledger == address(0)) return false;
         
         try ILedger(ledger).notifyDeposit(address(0), 0) {

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.20;
 
 import "../core/CoreSecurityManager.sol";
 import "../libraries/SecurityLibraries.sol";
-import "../interfaces/Interfaces.sol";
+import "../interfaces/SecurityInterfaces.sol";
 
 /**
  * @title AdvancedSecurityManager
@@ -16,15 +16,14 @@ contract AdvancedSecurityManager is CoreSecurityManager {
 
     // --- ADVANCED STATE ---
     mapping(address => uint256) public userRiskScores;
-    mapping(bytes32 => EmergencyLib.EmergencyTransaction) public emergencyTransactions;
-    mapping(address => uint256) public userActionCount;
-    mapping(uint256 => uint256) public blockPriceUpdates; // Flash loan detection
+    mapping(bytes32 => EmergencyLib.EmergencyTransaction) public advancedEmergencyTransactions;
+    mapping(uint256 => uint256) public advancedBlockPriceUpdates; // Flash loan detection
     
-    bool public emergencyModeActive;
-    uint256 public emergencyModeActivatedAt;
-    uint256 public emergencyTransactionDelay;
-    uint256 public maxUpdatesPerBlock;
-    uint256 public flashLoanDetectionWindow;
+    bool public advancedEmergencyModeActive;
+    uint256 public advancedEmergencyModeActivatedAt;
+    uint256 public advancedEmergencyTransactionDelay;
+    uint256 public advancedMaxUpdatesPerBlock;
+    uint256 public advancedFlashLoanDetectionWindow;
     
     // Advanced monitoring
     mapping(address => UserBehaviorData) public userBehavior;
@@ -52,19 +51,19 @@ contract AdvancedSecurityManager is CoreSecurityManager {
     }
 
     // --- EVENTS ---
-    event EmergencyModeToggled(bool enabled);
-    event EmergencyTransactionProposed(bytes32 indexed txHash, address indexed proposer, address target, uint256 value, bytes data, uint256 executeAfter);
-    event EmergencyTransactionExecuted(bytes32 indexed txHash, address indexed executor);
-    event EmergencyTransactionCancelled(bytes32 indexed txHash, address indexed canceller);
+    event AdvancedEmergencyModeToggled(bool enabled);
+    event AdvancedEmergencyTransactionProposed(bytes32 indexed txHash, address indexed proposer, address target, uint256 value, bytes data, uint256 executeAfter);
+    event AdvancedEmergencyTransactionExecuted(bytes32 indexed txHash, address indexed executor);
+    event AdvancedEmergencyTransactionCancelled(bytes32 indexed txHash, address indexed canceller);
     event UserRiskScoreUpdated(address indexed user, uint256 oldScore, uint256 newScore);
     event SuspiciousActivityDetected(address indexed user, string reason);
-    event FlashLoanDetected(uint256 blockNumber, uint256 updateCount);
+    event AdvancedFlashLoanDetected(uint256 blockNumber, uint256 updateCount);
     event AdvancedProtectionTriggered(string protectionType, address user, uint256 value);
 
     // --- ERRORS ---
-    error EmergencyModeActive();
-    error FlashLoanDetected();
-    error TooManyUpdatesPerBlock();
+    error AdvancedEmergencyModeActive();
+    error AdvancedFlashLoanAttackDetected();
+    error AdvancedTooManyUpdatesPerBlock();
     error HighRiskUser();
     error SuspiciousActivity();
 
@@ -73,9 +72,9 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         uint256 _maxUpdatesPerBlock,
         uint256 _flashLoanDetectionWindow
     ) public onlyRole(GOVERNANCE_ROLE) {
-        emergencyTransactionDelay = _emergencyTransactionDelay;
-        maxUpdatesPerBlock = _maxUpdatesPerBlock;
-        flashLoanDetectionWindow = _flashLoanDetectionWindow;
+        advancedEmergencyTransactionDelay = _emergencyTransactionDelay;
+        advancedMaxUpdatesPerBlock = _maxUpdatesPerBlock;
+        advancedFlashLoanDetectionWindow = _flashLoanDetectionWindow;
         
         // Advanced protection settings
         highRiskThreshold = 8000; // 80 out of 100 risk score
@@ -91,7 +90,7 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         // Advanced checks
         _checkUserRiskScore(user);
         _checkSuspiciousActivity(user, amount);
-        _checkFlashLoanActivity();
+        _checkAdvancedFlashLoanActivity();
         
         // Update behavior analysis
         _updateUserBehavior(user, amount);
@@ -127,12 +126,12 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         }
     }
 
-    function _checkFlashLoanActivity() internal {
+    function _checkAdvancedFlashLoanActivity() internal {
         if (newTokenMode) {
-            blockPriceUpdates[block.number]++;
-            if (blockPriceUpdates[block.number] > maxUpdatesPerBlock) {
-                emit FlashLoanDetected(block.number, blockPriceUpdates[block.number]);
-                revert TooManyUpdatesPerBlock();
+            advancedBlockPriceUpdates[block.number]++;
+            if (advancedBlockPriceUpdates[block.number] > advancedMaxUpdatesPerBlock) {
+                emit AdvancedFlashLoanDetected(block.number, advancedBlockPriceUpdates[block.number]);
+                revert AdvancedTooManyUpdatesPerBlock();
             }
         }
     }
@@ -168,55 +167,55 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         return block.timestamp / 1 days;
     }
 
-    // --- EMERGENCY SYSTEM ---
-    function activateEmergencyMode() external onlyRole(EMERGENCY_ROLE) {
-        emergencyModeActive = true;
-        emergencyModeActivatedAt = block.timestamp;
+    // --- EMERGENCY SYSTEM (FIXED: Now uses advancedEmergencyModeActive consistently) ---
+    function activateAdvancedEmergencyMode() external onlyRole(EMERGENCY_ROLE) {
+        advancedEmergencyModeActive = true;
+        advancedEmergencyModeActivatedAt = block.timestamp;
         _pause();
-        emit EmergencyModeToggled(true);
+        emit AdvancedEmergencyModeToggled(true);
     }
 
-    function deactivateEmergencyMode() external onlyRole(GOVERNANCE_ROLE) {
-        emergencyModeActive = false;
+    function deactivateAdvancedEmergencyMode() external onlyRole(GOVERNANCE_ROLE) {
+        advancedEmergencyModeActive = false;
         _unpause();
-        emit EmergencyModeToggled(false);
+        emit AdvancedEmergencyModeToggled(false);
     }
 
-    function proposeEmergencyTransaction(
+    function proposeAdvancedEmergencyTransaction(
         address target,
         uint256 value,
         bytes calldata data
     ) external onlyRole(EMERGENCY_ROLE) returns (bytes32) {
-        bytes32 txHash = emergencyTransactions.proposeTransaction(
+        bytes32 txHash = advancedEmergencyTransactions.proposeTransaction(
             target,
             value,
             data,
-            emergencyTransactionDelay,
+            advancedEmergencyTransactionDelay,
             msg.sender
         );
 
-        emit EmergencyTransactionProposed(
+        emit AdvancedEmergencyTransactionProposed(
             txHash,
             msg.sender,
             target,
             value,
             data,
-            block.timestamp + emergencyTransactionDelay
+            block.timestamp + advancedEmergencyTransactionDelay
         );
         
         return txHash;
     }
 
-    function executeEmergencyTransaction(bytes32 txHash) external onlyRole(GOVERNANCE_ROLE) {
-        bool success = emergencyTransactions.executeTransaction(txHash);
+    function executeAdvancedEmergencyTransaction(bytes32 txHash) external onlyRole(GOVERNANCE_ROLE) {
+        bool success = advancedEmergencyTransactions.executeTransaction(txHash);
         require(success, "Emergency transaction failed");
         
-        emit EmergencyTransactionExecuted(txHash, msg.sender);
+        emit AdvancedEmergencyTransactionExecuted(txHash, msg.sender);
     }
 
-    function cancelEmergencyTransaction(bytes32 txHash) external onlyRole(GOVERNANCE_ROLE) {
-        emergencyTransactions.cancelTransaction(txHash);
-        emit EmergencyTransactionCancelled(txHash, msg.sender);
+    function cancelAdvancedEmergencyTransaction(bytes32 txHash) external onlyRole(GOVERNANCE_ROLE) {
+        advancedEmergencyTransactions.cancelTransaction(txHash);
+        emit AdvancedEmergencyTransactionCancelled(txHash, msg.sender);
     }
 
     // --- RISK MANAGEMENT ---
@@ -271,15 +270,15 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         require(_maxUpdatesPerBlock > 0, "Invalid max updates");
         require(_detectionWindow > 0, "Invalid detection window");
         
-        maxUpdatesPerBlock = _maxUpdatesPerBlock;
-        flashLoanDetectionWindow = _detectionWindow;
+        advancedMaxUpdatesPerBlock = _maxUpdatesPerBlock;
+        advancedFlashLoanDetectionWindow = _detectionWindow;
     }
 
-    function setEmergencyTransactionDelay(uint256 _delay) external onlyRole(GOVERNANCE_ROLE) {
+    function setAdvancedEmergencyTransactionDelay(uint256 _delay) external onlyRole(GOVERNANCE_ROLE) {
         ValidationLib.validateDelay(_delay, 1 hours, 7 days);
-        uint256 oldDelay = emergencyTransactionDelay;
-        emergencyTransactionDelay = _delay;
-        emit SecurityParametersUpdated("emergencyTransactionDelay", oldDelay, _delay);
+        uint256 oldDelay = advancedEmergencyTransactionDelay;
+        advancedEmergencyTransactionDelay = _delay;
+        emit SecurityParametersUpdated("advancedEmergencyTransactionDelay", oldDelay, _delay);
     }
 
     // --- ADVANCED VIEW FUNCTIONS ---
@@ -326,12 +325,12 @@ contract AdvancedSecurityManager is CoreSecurityManager {
             highRiskThreshold,
             suspiciousActivityWindow,
             maxTransactionsPerWindow,
-            emergencyTransactionDelay,
-            emergencyModeActive
+            advancedEmergencyTransactionDelay,
+            advancedEmergencyModeActive
         );
     }
 
-    function getEmergencyTransaction(bytes32 txHash) external view returns (
+    function getAdvancedEmergencyTransaction(bytes32 txHash) external view returns (
         address target,
         uint256 value,
         bytes memory data,
@@ -340,7 +339,7 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         address proposer,
         uint256 proposedAt
     ) {
-        return emergencyTransactions.getTransaction(txHash);
+        return advancedEmergencyTransactions.getTransaction(txHash);
     }
 
     function getFlashLoanProtectionStatus() external view returns (
@@ -350,16 +349,16 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         bool protectionActive
     ) {
         return (
-            blockPriceUpdates[block.number],
-            maxUpdatesPerBlock,
-            flashLoanDetectionWindow,
+            advancedBlockPriceUpdates[block.number],
+            advancedMaxUpdatesPerBlock,
+            advancedFlashLoanDetectionWindow,
             newTokenMode
         );
     }
 
-    // --- OVERRIDE FOR EMERGENCY MODE ---
+    // --- OVERRIDE FOR EMERGENCY MODE (FIXED: Now consistent with variable name) ---
     function isEmergencyMode() external view override returns (bool) {
-        return emergencyModeActive;
+        return advancedEmergencyModeActive;
     }
 
     // Enhanced user deposit check with advanced features
@@ -369,7 +368,7 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         if (!basicCheck) return (false, basicReason);
         
         // Emergency mode check
-        if (emergencyModeActive) return (false, "Emergency mode active");
+        if (advancedEmergencyModeActive) return (false, "Advanced emergency mode active");
         
         // Risk score check
         if (userRiskScores[user] > highRiskThreshold) return (false, "High risk user");
@@ -378,7 +377,7 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         if (userBehavior[user].flagged) return (false, "User flagged for suspicious activity");
         
         // Flash loan protection
-        if (newTokenMode && blockPriceUpdates[block.number] >= maxUpdatesPerBlock) {
+        if (newTokenMode && advancedBlockPriceUpdates[block.number] >= advancedMaxUpdatesPerBlock) {
             return (false, "Flash loan protection triggered");
         }
         
