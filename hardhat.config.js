@@ -10,12 +10,13 @@ const BSC_API_KEY = process.env.BSC_API_KEY || "";
 
 module.exports = {
   solidity: {
-    version: "0.8.30",
+    version: "0.8.24", // Using 0.8.24 as specified in the compile log
     settings: {
       optimizer: {
         enabled: true,
         runs: 200,
       },
+      evmVersion: "cancun", // <-- This is the critical fix
       viaIR: true,
     },
   },

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Modular DeFi Protocol with Advanced Security Features",
   "main": "index.js",
-  "scripts": {
+  "scripts": { 
     "compile": "hardhat compile",
     "test": "hardhat test",
     "test:unit": "hardhat test test/unit/**/*.test.js",

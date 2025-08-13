@@ -3,173 +3,138 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers");
 const { deployFullSystem } = require("../fixtures/mock-deployments");
-const { TEST_DATA } = require("../fixtures/test-data");
+const { TEST_CONSTANTS } = require("../fixtures/test-data");
 
 describe("Governance Flow Integration", function () {
   async function deployGovernanceSystemFixture() {
-    const system = await deployFullSystem();
-    
-    // Deploy governance contract if not already deployed
-    const SecurityGovernance = await ethers.getContractFactory("SecurityGovernance", {
-      libraries: {
-        EmergencyLib: await system.libraries.securityLibraries.getAddress(),
-        ValidationLib: await system.libraries.securityLibraries.getAddress(),
-      },
-    });
-    
-    const securityGovernance = await upgrades.deployProxy(SecurityGovernance, [
-      system.signers.treasury.address,
-      24 * 60 * 60, // 24 hours delay
-      2 // require 2 signatures
-    ], {
-      initializer: 'initialize',
-      kind: 'uups',
-      unsafeAllow: ['external-library-linking']
-    });
-    
-    return {
-      ...system,
-      governance: {
-        securityGovernance
-      }
-    };
+    return await deployFullSystem();
   }
 
   describe("Parameter Management Flow", function () {
     it("Should allow governance to propose parameter changes", async function () {
-      const { governance, signers } = await loadFixture(deployGovernanceSystemFixture);
+      const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
       
-      // Propose a parameter change
-      const proposalTx = await governance.securityGovernance
-        .connect(signers.governance)
-        .proposeParameterChange("maxPriceChangeBPS", 1500);
+      await expect(contracts.securityGovernance
+        .connect(signers.paramManager)
+        .proposeParameterChange("maxPriceChangeBPS", 1500))
+        .to.emit(contracts.securityGovernance, "ParameterChangeProposed");
       
-      const receipt = await proposalTx.wait();
-      expect(receipt.status).to.equal(1);
-      
-      // Check proposal was created
-      const governanceStats = await governance.securityGovernance.getGovernanceStats();
-      expect(governanceStats.totalProposalsCount).to.be.gt(0);
+      const governanceStats = await contracts.securityGovernance.getGovernanceStats();
+      expect(governanceStats.totalProposalsCount).to.equal(1);
     });
 
     it("Should require multiple signatures for parameter execution", async function () {
-      const { governance, signers } = await loadFixture(deployGovernanceSystemFixture);
-      
-      // Propose parameter change
-      const proposalTx = await governance.securityGovernance
-        .connect(signers.governance)
-        .proposeParameterChange("maxPriceChangeBPS", 1500);
-      
-      const receipt = await proposalTx.wait();
-      
-      // Extract proposal ID from events (simplified)
-      // In real implementation, you'd parse the event logs
-      
-      // Verify that single signature is not enough
-      const stats = await governance.securityGovernance.getGovernanceStats();
-      expect(stats.requiredSignaturesCount).to.equal(2);
+        const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
+    
+        const proposalTx = await contracts.securityGovernance
+          .connect(signers.paramManager)
+          .proposeParameterChange("maxPriceChangeBPS", 1500);
+        
+        const receipt = await proposalTx.wait();
+        const event = receipt.logs.find(e => e.eventName === 'ParameterChangeProposed');
+        const proposalId = event.args.proposalId;
+    
+        await expect(
+            contracts.securityGovernance.connect(signers.governance).executeParameterChange(proposalId)
+        ).to.be.revertedWithCustomError(contracts.securityGovernance, "InsufficientSignatures");
     });
 
     it("Should execute parameter changes after required signatures", async function () {
-      const { governance, signers } = await loadFixture(deployGovernanceSystemFixture);
-      
-      // This test would simulate the full multi-sig flow
-      // 1. Propose parameter change
-      // 2. Get required signatures
-      // 3. Execute the change
-      // 4. Verify parameter was updated
-      
-      const oldParameter = await governance.securityGovernance.getSecurityParameter("maxPriceChangeBPS");
-      
-      // Propose change
-      await governance.securityGovernance
-        .connect(signers.governance)
-        .proposeParameterChange("maxPriceChangeBPS", 1500);
-      
-      // In a real scenario, you'd need to:
-      // - Get the proposal ID
-      // - Have multiple signers sign the proposal
-      // - Execute the proposal
-      
-      // For now, just verify the proposal system works
-      const stats = await governance.securityGovernance.getGovernanceStats();
-      expect(stats.totalProposalsCount).to.be.gt(0);
+        const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
+        const { paramManager, governance } = signers;
+    
+        const paramName = "maxPriceChangeBPS";
+        const newValue = 1500;
+    
+        const proposalTx = await contracts.securityGovernance.connect(paramManager).proposeParameterChange(paramName, newValue);
+        const receipt = await proposalTx.wait();
+        const event = receipt.logs.find(e => e.eventName === 'ParameterChangeProposed');
+        const proposalId = event.args.proposalId;
+    
+        await expect(contracts.securityGovernance.connect(governance).signProposal(proposalId))
+            .to.emit(contracts.securityGovernance, "ParameterChangeExecuted");
+    
+        const updatedParameter = await contracts.securityGovernance.getSecurityParameter(paramName);
+        expect(updatedParameter).to.equal(newValue);
     });
   });
 
   describe("Emergency Procedures Flow", function () {
     it("Should allow emergency role to propose emergency transactions", async function () {
-      const { governance, contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
+      const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
       
-      // Create emergency transaction data (pause the security manager)
       const pauseData = contracts.coreSecurityManager.interface.encodeFunctionData("pause", []);
       
-      // Propose emergency transaction
-      const emergencyTx = await governance.securityGovernance
-        .connect(signers.governance) // Assuming governance has emergency role
+      await expect(contracts.securityGovernance
+        .connect(signers.emergency)
         .proposeEmergencyTransaction(
           await contracts.coreSecurityManager.getAddress(),
           0,
           pauseData
-        );
-      
-      const receipt = await emergencyTx.wait();
-      expect(receipt.status).to.equal(1);
+        )).to.emit(contracts.securityGovernance, "EmergencyTransactionProposed");
     });
 
     it("Should enforce timelock on emergency transactions", async function () {
-      const { governance, contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
-      
-      const pauseData = contracts.coreSecurityManager.interface.encodeFunctionData("pause", []);
-      
-      // Propose emergency transaction
-      const proposalTx = await governance.securityGovernance
-        .connect(signers.governance)
-        .proposeEmergencyTransaction(
-          await contracts.coreSecurityManager.getAddress(),
-          0,
-          pauseData
-        );
-      
-      const receipt = await proposalTx.wait();
-      
-      // Try to execute immediately (should fail due to timelock)
-      // In real implementation, you'd extract the transaction hash from events
-      // and then try to execute it before the timelock expires
-      
-      expect(receipt.status).to.equal(1);
+        const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
+        
+        const pauseData = contracts.coreSecurityManager.interface.encodeFunctionData("pause", []);
+        
+        const proposalTx = await contracts.securityGovernance
+          .connect(signers.emergency)
+          .proposeEmergencyTransaction(
+            await contracts.coreSecurityManager.getAddress(),
+            0,
+            pauseData
+          );
+        
+        const receipt = await proposalTx.wait();
+        const event = receipt.logs.find(e => e.eventName === 'EmergencyTransactionProposed');
+        const txHash = event.args.txHash;
+    
+        await expect(
+            contracts.securityGovernance.connect(signers.governance).executeEmergencyTransaction(txHash)
+        ).to.be.revertedWith("Timelock: operation is not ready");
     });
 
     it("Should execute emergency transactions after timelock", async function () {
-      const { governance, contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
-      
-      // This test would:
-      // 1. Propose emergency transaction
-      // 2. Wait for timelock period
-      // 3. Execute the transaction
-      // 4. Verify the effect (contract paused)
-      
-      const initialPausedState = await contracts.coreSecurityManager.isPaused();
-      expect(initialPausedState).to.be.false;
-      
-      // The full implementation would include timelock testing
+        const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
+        
+        const pauseData = contracts.coreSecurityManager.interface.encodeFunctionData("pause", []);
+        
+        const proposalTx = await contracts.securityGovernance
+          .connect(signers.emergency)
+          .proposeEmergencyTransaction(
+            await contracts.coreSecurityManager.getAddress(),
+            0,
+            pauseData
+          );
+        
+        const receipt = await proposalTx.wait();
+        const event = receipt.logs.find(e => e.eventName === 'EmergencyTransactionProposed');
+        const txHash = event.args.txHash;
+    
+        await time.increase(TEST_CONSTANTS.ONE_DAY + 1);
+    
+        await expect(
+            contracts.securityGovernance.connect(signers.governance).executeEmergencyTransaction(txHash)
+        ).to.emit(contracts.securityGovernance, "EmergencyTransactionExecuted");
+    
+        expect(await contracts.coreSecurityManager.paused()).to.be.true;
     });
   });
 
   describe("Contract Management Flow", function () {
     it("Should manage contracts through governance", async function () {
-      const { governance, contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
+      const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
       
-      // Add contract to management
-      await governance.securityGovernance
+      await contracts.securityGovernance
         .connect(signers.governance)
         .addManagedContract(
           await contracts.coreSecurityManager.getAddress(),
           "CoreSecurityManager"
         );
       
-      // Verify contract is managed
-      const managedContract = await governance.securityGovernance.getManagedContract(
+      const managedContract = await contracts.securityGovernance.getManagedContract(
         await contracts.coreSecurityManager.getAddress()
       );
       
@@ -178,74 +143,61 @@ describe("Governance Flow Integration", function () {
     });
 
     it("Should pause and unpause managed contracts", async function () {
-      const { governance, contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
-      
-      // Add contract to management first
-      await governance.securityGovernance
-        .connect(signers.governance)
-        .addManagedContract(
-          await contracts.coreSecurityManager.getAddress(),
-          "CoreSecurityManager"
-        );
-      
-      // Pause the contract
-      await governance.securityGovernance
-        .connect(signers.governance)
-        .pauseManagedContract(await contracts.coreSecurityManager.getAddress());
-      
-      // Verify contract is paused
-      expect(await contracts.coreSecurityManager.isPaused()).to.be.true;
-      
-      // Unpause the contract
-      await governance.securityGovernance
-        .connect(signers.governance)
-        .unpauseManagedContract(await contracts.coreSecurityManager.getAddress());
-      
-      // Verify contract is unpaused
-      expect(await contracts.coreSecurityManager.isPaused()).to.be.false;
+        const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
+    
+        await contracts.securityGovernance
+          .connect(signers.governance)
+          .addManagedContract(
+            await contracts.coreSecurityManager.getAddress(),
+            "CoreSecurityManager"
+          );
+        
+        await contracts.securityGovernance
+          .connect(signers.emergency)
+          .pauseManagedContract(await contracts.coreSecurityManager.getAddress());
+        
+        expect(await contracts.coreSecurityManager.paused()).to.be.true;
+        
+        await contracts.securityGovernance
+          .connect(signers.governance)
+          .unpauseManagedContract(await contracts.coreSecurityManager.getAddress());
+        
+        expect(await contracts.coreSecurityManager.paused()).to.be.false;
     });
   });
 
   describe("Role Management Flow", function () {
     it("Should manage roles through governance system", async function () {
-      const { governance, signers } = await loadFixture(deployGovernanceSystemFixture);
+      const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
       
-      const PARAM_MANAGER_ROLE = await governance.securityGovernance.PARAM_MANAGER_ROLE();
+      const PARAM_MANAGER_ROLE = await contracts.securityGovernance.PARAM_MANAGER_ROLE();
       
-      // Grant role
-      await governance.securityGovernance
+      await contracts.securityGovernance
         .connect(signers.governance)
-        .grantRole(PARAM_MANAGER_ROLE, signers.user1.address);
+        .grantRole(PARAM_MANAGER_ROLE, signers.user2.address);
       
-      // Verify role was granted
-      const hasRole = await governance.securityGovernance.hasRole(PARAM_MANAGER_ROLE, signers.user1.address);
-      expect(hasRole).to.be.true;
+      expect(await contracts.securityGovernance.hasRole(PARAM_MANAGER_ROLE, signers.user2.address)).to.be.true;
       
-      // Revoke role
-      await governance.securityGovernance
+      await contracts.securityGovernance
         .connect(signers.governance)
-        .revokeRole(PARAM_MANAGER_ROLE, signers.user1.address);
+        .revokeRole(PARAM_MANAGER_ROLE, signers.user2.address);
       
-      // Verify role was revoked
-      const hasRoleAfter = await governance.securityGovernance.hasRole(PARAM_MANAGER_ROLE, signers.user1.address);
-      expect(hasRoleAfter).to.be.false;
+      expect(await contracts.securityGovernance.hasRole(PARAM_MANAGER_ROLE, signers.user2.address)).to.be.false;
     });
   });
 
   describe("Treasury Management Flow", function () {
     it("Should manage treasury wallet through governance", async function () {
-      const { governance, signers } = await loadFixture(deployGovernanceSystemFixture);
+      const { contracts, signers } = await loadFixture(deployGovernanceSystemFixture);
       
-      const currentTreasury = await governance.securityGovernance.getTreasuryWallet();
+      const currentTreasury = await contracts.securityGovernance.getTreasuryWallet();
       expect(currentTreasury).to.equal(signers.treasury.address);
       
-      // Change treasury wallet
-      await governance.securityGovernance
+      await contracts.securityGovernance
         .connect(signers.governance)
         .setTreasuryWallet(signers.user2.address);
       
-      // Verify treasury was changed
-      const newTreasury = await governance.securityGovernance.getTreasuryWallet();
+      const newTreasury = await contracts.securityGovernance.getTreasuryWallet();
       expect(newTreasury).to.equal(signers.user2.address);
     });
   });
