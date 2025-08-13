@@ -6,7 +6,8 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 
 ```
 ├── contracts/
-│   ├── core/                  # Core protocol logic
+│   ├── core/                  # Core protocol logic & main token
+│   │   ├── QoraFi.sol
 │   │   ├── CoreSecurityManager.sol
 │   │   ├── EnhancedBondingCurve.sol
 │   │   └── EnhancedOracle.sol
@@ -22,19 +23,33 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 │   ├── staking/               # Proof of Liquidity staking contracts
 │   │   ├── ProofOfLiquidity.sol
 │   │   └── RewardEngine.sol
+│   ├── rwa/                   # Real World Asset tokenization contracts
+│   │   ├── RWAFactory.sol
+│   │   ├── RWA_Wrapper_ERC20.sol
+│   │   ├── QoraFiRWA.sol
+│   │   └── interfaces.sol
+│   ├── usq/                   # USQ Stablecoin contracts
+│   │   ├── USQ.sol
+│   │   ├── USQEngine.sol
+│   │   └── Oracle.sol
 │   ├── libraries/             # Shared utility and security libraries
 │   │   ├── OracleLibraries.sol
 │   │   ├── SecurityLibraries.sol
 │   │   └── UtilityLibraries.sol
-│   ├── interfaces/            # Interfaces for all contracts
-│   │   ├── SecurityInterfaces.sol
+│   ├── interfaces/            # General protocol interfaces
+│   │   └── SecurityInterfaces.sol
 │   ├── mocks/                 # Mock contracts for testing
 │   │   ├── MockERC20.sol
 │   │   ├── MockRouter.sol
 │   │   └── MockUniswapV2Pair.sol
 │   └── legacy/                # Old, monolithic contract versions for reference
-│       ├── BondingCurve.sol
-│       └── MarketOracle.sol
+│   │   ├── BondingCurve.sol
+│   │   └── MarketOracle.sol│  
+│   └── tokens/                # Old, monolithic contract versions for reference
+│   │    ├── QoraFi.sol 
+│   └── tokenomics/                # Old, monolithic contract versions for reference
+│       ├── QoraFiAirdrop.sol
+│       ├── QoraFiVesting.sol  
 │
 ├── scripts/
 │   ├── deploy/                # Deployment scripts
@@ -56,7 +71,7 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 ├── .env.example               # Example environment variables
 ├── hardhat.config.js          # Hardhat configuration
 ├── package.json               # Project dependencies
-└── README.md                  # This file
+└── README.md  
 ```
 
 ## 🚀 Quick Start
@@ -338,5 +353,6 @@ For questions about the testing framework:
 
 
 🛡️ **Security First**: This testing framework prioritizes security validation to ensure the DeFi protocol is robust, reliable, and ready for production deployment.
+
 
 
