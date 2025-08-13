@@ -5,26 +5,58 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 ## 📁 Test Structure
 
 ```
-test/
-├── unit/                          # Unit tests for individual components
-│   ├── core/                      # Core functionality tests
-│   │   ├── CoreSecurityManager.test.js
-│   │   └── EnhancedOracle.test.js
-│   ├── advanced/                  # Advanced features tests
-│   │   ├── AdvancedSecurityManager.test.js
-│   │   └── SecurityGovernance.test.js
-│   └── libraries/                 # Library tests
-│       ├── SecurityLibraries.test.js
-│       ├── OracleLibraries.test.js
-│       └── UtilityLibraries.test.js
-├── integration/                   # Integration tests
-│   ├── complete-system.test.js    # End-to-end system tests
-│   ├── emergency-procedures.test.js
-│   └── governance-flow.test.js
-├── fixtures/                      # Test utilities and data
-│   ├── mock-deployments.js        # Deployment fixtures
-│   └── test-data.js               # Test constants and helpers
-└── reports/                       # Generated test reports
+├── contracts/
+│   ├── core/                  # Core protocol logic
+│   │   ├── CoreSecurityManager.sol
+│   │   ├── EnhancedBondingCurve.sol
+│   │   └── EnhancedOracle.sol
+│   ├── advanced/              # Advanced, optional security features
+│   │   ├── AdvancedSecurityManager.sol
+│   │   └── SecurityGovernance.sol
+│   ├── governance/            # DAO governance contracts
+│   │   ├── QoraFiGovernor.sol
+│   │   └── QoraFiTimelock.sol
+│   ├── rewards/               # Referral and reward distribution logic
+│   │   ├── DelegatorDistributor.sol
+│   │   └── DelegatorNodeRewardsLedger.sol
+│   ├── staking/               # Proof of Liquidity staking contracts
+│   │   ├── ProofOfLiquidity.sol
+│   │   └── RewardEngine.sol
+│   ├── libraries/             # Shared utility and security libraries
+│   │   ├── OracleLibraries.sol
+│   │   ├── SecurityLibraries.sol
+│   │   └── UtilityLibraries.sol
+│   ├── interfaces/            # Interfaces for all contracts
+│   │   ├── SecurityInterfaces.sol
+│   ├── mocks/                 # Mock contracts for testing
+│   │   ├── MockERC20.sol
+│   │   ├── MockRouter.sol
+│   │   └── MockUniswapV2Pair.sol
+│   └── legacy/                # Old, monolithic contract versions for reference
+│       ├── BondingCurve.sol
+│       └── MarketOracle.sol
+│
+├── scripts/
+│   ├── deploy/                # Deployment scripts
+│   │   └── deploy-all.js
+│   └── interactions/          # Scripts for interacting with deployed contracts
+│       ├── manage-governance.js
+│       ├── setup-parameters.js
+│       └── test-security.js
+│
+├── test/
+│   ├── unit/                  # Unit tests for individual components
+│   └── integration/           # Tests for cross-contract interactions
+│
+├── config/                    # Configuration files
+│   ├── deployment-params.json
+│   ├── network-configs.json
+│   └── security-settings.json
+│
+├── .env.example               # Example environment variables
+├── hardhat.config.js          # Hardhat configuration
+├── package.json               # Project dependencies
+└── README.md                  # This file
 ```
 
 ## 🚀 Quick Start
@@ -303,5 +335,6 @@ For questions about the testing framework:
 - Consult the integration tests for cross-contract scenarios
 
 ---
+
 
 🛡️ **Security First**: This testing framework prioritizes security validation to ensure the DeFi protocol is robust, reliable, and ready for production deployment.
