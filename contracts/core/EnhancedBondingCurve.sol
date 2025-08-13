@@ -1,6 +1,5 @@
-// contracts/core/EnhancedBondingCurve.sol
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -12,7 +11,14 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "../libraries/SecurityLibraries.sol";
 import "../libraries/UtilityLibraries.sol";
-import "../interfaces/SecurityInterfaces.sol";
+// Use selective import to avoid conflicts with ILedger  
+import {
+    ISecurityManager,
+    IBondingCurve,
+    IEnhancedOracle,
+    IEnhancedLedger
+} from "../interfaces/SecurityInterfaces.sol";
+// IRouter is already available from UtilityLibraries.sol
 
 /**
  * @title EnhancedBondingCurve
@@ -27,7 +33,7 @@ contract EnhancedBondingCurve is
     UUPSUpgradeable,
     IBondingCurve
 {
-    using SafeERC20Upgradeable for IERC20Upgradeable;
+    using SafeERC20 for IERC20;
     using SwapLib for address;
     using LiquidityLib for address;
     using TokenHelperLib for address;
@@ -39,8 +45,8 @@ contract EnhancedBondingCurve is
     bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
     
     // --- STATE ---
-    IERC20Upgradeable public usdtToken;
-    IERC20Upgradeable public qorafiToken;
+    IERC20 public usdtToken;
+    IERC20 public qorafiToken;
     ISecurityManager public securityManager;
     IEnhancedOracle public oracle;
     IRouter public router;
@@ -60,6 +66,7 @@ contract EnhancedBondingCurve is
     event DepositProcessed(address indexed user, uint256 usdtValue, uint256 qorafiAcquired, uint256 lpTokensReceived);
     event ZapTokenAdded(address indexed token);
     event ZapTokenRemoved(address indexed token);
+    event LedgerNotificationFailed(address indexed user, uint256 amount, string reason);
 
     // --- ERRORS ---
     error InvalidAmount();
@@ -93,8 +100,8 @@ contract EnhancedBondingCurve is
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(EMERGENCY_ROLE, msg.sender);
 
-        usdtToken = IERC20Upgradeable(_usdtToken);
-        qorafiToken = IERC20Upgradeable(_qorafiToken);
+        usdtToken = IERC20(_usdtToken);
+        qorafiToken = IERC20(_qorafiToken);
         router = IRouter(_router);
         securityManager = ISecurityManager(_securityManager);
         oracle = IEnhancedOracle(_oracle);
@@ -108,7 +115,7 @@ contract EnhancedBondingCurve is
     function deposit(
         uint256 amountUSDT,
         uint256 minQorafiOut,
-        uint256 minLiquidity,
+        uint256 /* minLiquidity */,
         uint256 deadline,
         uint16 slippageBps
     ) external override 
@@ -119,14 +126,14 @@ contract EnhancedBondingCurve is
         _performSecurityChecks(msg.sender, amountUSDT);
         
         usdtToken.safeTransferFrom(msg.sender, address(this), amountUSDT);
-        _processDeposit(amountUSDT, minQorafiOut, minLiquidity, deadline, slippageBps);
+        _processDeposit(amountUSDT, minQorafiOut, deadline, slippageBps);
         _updateStatistics(msg.sender, amountUSDT);
     }
 
     function depositWithBNB(
         uint256 minUsdtOut,
         uint256 minQorafiOut,
-        uint256 minLiquidity,
+        uint256 /* minLiquidity */,
         uint256 deadline,
         uint16 slippageBps
     ) external payable override
@@ -146,7 +153,7 @@ contract EnhancedBondingCurve is
         );
         
         _performSecurityChecks(msg.sender, usdtReceived);
-        _processDeposit(usdtReceived, minQorafiOut, minLiquidity, deadline, slippageBps);
+        _processDeposit(usdtReceived, minQorafiOut, deadline, slippageBps);
         _updateStatistics(msg.sender, usdtReceived);
     }
 
@@ -155,7 +162,7 @@ contract EnhancedBondingCurve is
         uint256 amountIn,
         uint256 minUsdtOut,
         uint256 minQorafiOut,
-        uint256 minLiquidity,
+        uint256 /* minLiquidity */,
         uint256 deadline,
         uint16 slippageBps
     ) external override
@@ -166,7 +173,7 @@ contract EnhancedBondingCurve is
         require(amountIn > 0, "Invalid amount");
         _validateDeposit(0, deadline, slippageBps);
 
-        IERC20Upgradeable(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         
         // Use utility library for multi-hop swap if needed
         uint256 usdtReceived = tokenIn == router.WETH() 
@@ -174,7 +181,7 @@ contract EnhancedBondingCurve is
             : SwapLib.executeMultiHopSwap(address(router), tokenIn, address(usdtToken), amountIn, minUsdtOut, deadline);
         
         _performSecurityChecks(msg.sender, usdtReceived);
-        _processDeposit(usdtReceived, minQorafiOut, minLiquidity, deadline, slippageBps);
+        _processDeposit(usdtReceived, minQorafiOut, deadline, slippageBps);
         _updateStatistics(msg.sender, usdtReceived);
     }
 
@@ -198,7 +205,6 @@ contract EnhancedBondingCurve is
     function _processDeposit(
         uint256 amountUSDT,
         uint256 minQorafiOut,
-        uint256 minLiquidity,
         uint256 deadline,
         uint16 slippageBps
     ) internal {
@@ -251,21 +257,20 @@ contract EnhancedBondingCurve is
 
     function _notifyLedger(address user, uint256 amount) internal {
         if (address(ledger) != address(0)) {
-            (bool success, string memory errorReason) = LedgerLib.safeNotifyLedger(
-                address(ledger),
-                user,
-                amount
-            );
-            
-            if (!success) {
-                emit LedgerNotificationFailed(user, amount, errorReason);
+            // Use direct interface call instead of library
+            try ledger.notifyDeposit(user, amount) {
+                // Success - no action needed
+            } catch Error(string memory reason) {
+                emit LedgerNotificationFailed(user, amount, reason);
+            } catch {
+                emit LedgerNotificationFailed(user, amount, "Unknown ledger error");
             }
         }
     }
 
     function _updateStatistics(address user, uint256 amount) internal {
         userStats.updateUserStats(user, amount);
-        protocolStats.updateProtocolStats(amount, _getTotalUsers());
+        StatisticsLib.updateProtocolStats(protocolStats, amount, _getTotalUsers());
         securityManager.postDepositUpdate(user, amount);
     }
 
@@ -317,6 +322,10 @@ contract EnhancedBondingCurve is
         oracle = IEnhancedOracle(_oracle);
     }
 
+    function setManualPrice(uint256 price) external override onlyRole(GOVERNANCE_ROLE) {
+        oracle.setFallbackPrice(price);
+    }
+
     function setLiquidityRatio(uint256 _ratioBPS) external override onlyRole(GOVERNANCE_ROLE) {
         ValidationLib.validateBPS(_ratioBPS);
         liquidityRatioBPS = _ratioBPS;
@@ -340,9 +349,6 @@ contract EnhancedBondingCurve is
     function unpause() external override onlyRole(GOVERNANCE_ROLE) {
         _unpause();
     }
-
-    // --- EVENTS (additional) ---
-    event LedgerNotificationFailed(address indexed user, uint256 amount, string reason);
 
     // --- UUPS UPGRADE HOOK ---
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(GOVERNANCE_ROLE) {}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -47,6 +47,10 @@ contract SecurityGovernance is
     mapping(bytes32 => mapping(address => bool)) public proposalVotes;
     uint256 public requiredSignatures;
     uint256 public proposalValidityPeriod;
+
+    // Role member tracking (manual implementation)
+    mapping(bytes32 => address[]) private roleMembers;
+    mapping(bytes32 => mapping(address => uint256)) private roleMemberIndex;
 
     // --- STRUCTS ---
     struct ContractSettings {
@@ -123,6 +127,12 @@ contract SecurityGovernance is
         _grantRole(PARAM_MANAGER_ROLE, msg.sender);
         _grantRole(UPGRADE_ROLE, msg.sender);
 
+        // Initialize role tracking for msg.sender
+        _initializeRoleTracking(GOVERNANCE_ROLE, msg.sender);
+        _initializeRoleTracking(EMERGENCY_ROLE, msg.sender);
+        _initializeRoleTracking(PARAM_MANAGER_ROLE, msg.sender);
+        _initializeRoleTracking(UPGRADE_ROLE, msg.sender);
+
         treasuryWallet = _treasuryWallet;
         emergencyTransactionDelay = _emergencyTransactionDelay;
         requiredSignatures = _requiredSignatures;
@@ -143,6 +153,82 @@ contract SecurityGovernance is
         securityParameters["maxGasPrice"] = 20 gwei;
         securityParameters["liquidityRatioBPS"] = 5000; // 50%
         securityParameters["maxSlippageBPS"] = 300; // 3%
+    }
+
+    // --- ROLE MANAGEMENT (Custom implementation, not from IGovernance) ---
+    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (!hasRole(role, account)) {
+            // Add to our manual tracking
+            roleMembers[role].push(account);
+            roleMemberIndex[role][account] = roleMembers[role].length - 1;
+        }
+        super.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (hasRole(role, account)) {
+            // Remove from our manual tracking
+            uint256 index = roleMemberIndex[role][account];
+            uint256 lastIndex = roleMembers[role].length - 1;
+            
+            if (index != lastIndex) {
+                address lastMember = roleMembers[role][lastIndex];
+                roleMembers[role][index] = lastMember;
+                roleMemberIndex[role][lastMember] = index;
+            }
+            
+            roleMembers[role].pop();
+            delete roleMemberIndex[role][account];
+        }
+        super.revokeRole(role, account);
+    }
+
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return super.hasRole(role, account);
+    }
+
+    // Manual implementation of getRoleMemberCount
+    function getRoleMemberCount(bytes32 role) public view returns (uint256) {
+        return roleMembers[role].length;
+    }
+
+    // Manual implementation of getRoleMember
+    function getRoleMember(bytes32 role, uint256 index) public view returns (address) {
+        require(index < roleMembers[role].length, "Role member index out of bounds");
+        return roleMembers[role][index];
+    }
+
+    // --- INTERFACE IMPLEMENTATIONS (IGovernance) ---
+    function setSecurityParameters(string calldata paramName, uint256 value) external override onlyRole(PARAM_MANAGER_ROLE) {
+        bytes32 proposalId = this.proposeParameterChange(paramName, value);
+        // Auto-execute if caller has GOVERNANCE_ROLE
+        if (hasRole(GOVERNANCE_ROLE, msg.sender) && requiredSignatures == 1) {
+            _executeParameterChange(proposalId);
+        }
+    }
+
+    function getSecurityParameter(string calldata paramName) external view override returns (uint256) {
+        return securityParameters[paramName];
+    }
+
+    function setTreasuryWallet(address _newTreasury) external override onlyRole(GOVERNANCE_ROLE) {
+        ValidationLib.validateAddress(_newTreasury);
+        address oldTreasury = treasuryWallet;
+        treasuryWallet = _newTreasury;
+        emit TreasuryWalletChanged(oldTreasury, _newTreasury);
+    }
+
+    function getTreasuryWallet() external view override returns (address) {
+        return treasuryWallet;
+    }
+
+    function authorizeUpgrade(address newImplementation) external override onlyRole(UPGRADE_ROLE) {
+        _authorizeUpgrade(newImplementation);
+    }
+
+    // --- ADDITIONAL GOVERNANCE FUNCTIONS ---
+    function getImplementation() external view returns (address) {
+        return _getImplementation();
     }
 
     // --- PARAMETER MANAGEMENT ---
@@ -214,7 +300,7 @@ contract SecurityGovernance is
         proposal.executed = true;
         executedProposals++;
 
-        uint256 oldValue = securityParameters[proposal.parameterName];
+        // uint256 oldValue = securityParameters[proposal.parameterName]; // FIX: Unused local variable
         securityParameters[proposal.parameterName] = proposal.newValue;
 
         emit ParameterChangeExecuted(proposalId, proposal.parameterName, proposal.newValue, msg.sender);
@@ -235,20 +321,20 @@ contract SecurityGovernance is
         emit ProposalCancelled(proposalId, msg.sender);
     }
 
-    function _propagateParameterChange(string memory parameterName, uint256 newValue) internal {
+    function _propagateParameterChange(string memory /*parameterName*/, uint256 /*newValue*/) internal pure {
         // This would call specific functions on managed contracts to update their parameters
         // Implementation depends on the specific interfaces of the managed contracts
         
-        bytes32 paramHash = keccak256(abi.encodePacked(parameterName));
+        // bytes32 paramHash = keccak256(abi.encodePacked(parameterName)); // FIX: Unused local variable
         
         // Example: Update SecurityManager parameters
-        bytes32 securityManagerHash = keccak256(abi.encodePacked("SecurityManager"));
+        // bytes32 securityManagerHash = keccak256(abi.encodePacked("SecurityManager")); // FIX: Unused local variable
         // if (managedContracts[securityManagerAddress].contractType == "SecurityManager") {
         //     ISecurityManager(contractAddress).updateParameter(parameterName, newValue);
         // }
     }
 
-    // --- EMERGENCY SYSTEM ---
+    // --- EMERGENCY SYSTEM (IEmergencySystem) ---
     function proposeEmergencyTransaction(
         address target,
         uint256 value,
@@ -284,6 +370,70 @@ contract SecurityGovernance is
     function cancelEmergencyTransaction(bytes32 txHash) external override onlyRole(GOVERNANCE_ROLE) {
         emergencyTransactions.cancelTransaction(txHash);
         emit EmergencyTransactionCancelled(txHash, msg.sender);
+    }
+
+    function getEmergencyTransaction(bytes32 txHash) external view override returns (
+        address target,
+        uint256 value,
+        bytes memory data,
+        uint256 executeAfter,
+        bool executed,
+        address proposer,
+        uint256 proposedAt
+    ) {
+        return emergencyTransactions.getTransaction(txHash);
+    }
+
+    function activateEmergencyMode() external override onlyRole(EMERGENCY_ROLE) {
+        // Activate emergency mode on all managed contracts
+        address[] memory contractAddresses = _getManagedContractAddresses();
+        
+        for (uint256 i = 0; i < contractAddresses.length; i++) {
+            if (managedContracts[contractAddresses[i]].isManaged) {
+                (bool success, ) = contractAddresses[i].call(
+                    abi.encodeWithSignature("activateEmergencyMode()")
+                );
+                // Continue even if some calls fail, but capture the result
+                if (!success) {
+                    // Optionally emit an event or handle the failure
+                }
+            }
+        }
+    }
+
+    function deactivateEmergencyMode() external override onlyRole(GOVERNANCE_ROLE) {
+        // Deactivate emergency mode on all managed contracts
+        address[] memory contractAddresses = _getManagedContractAddresses();
+        
+        for (uint256 i = 0; i < contractAddresses.length; i++) {
+            if (managedContracts[contractAddresses[i]].isManaged) {
+                (bool success, ) = contractAddresses[i].call(
+                    abi.encodeWithSignature("deactivateEmergencyMode()")
+                );
+                // Continue even if some calls fail, but capture the result
+                if (!success) {
+                    // Optionally emit an event or handle the failure
+                }
+            }
+        }
+    }
+
+    function isEmergencyModeActive() external view override returns (bool) {
+        // Check if any managed contract is in emergency mode
+        address[] memory contractAddresses = _getManagedContractAddresses();
+        
+        for (uint256 i = 0; i < contractAddresses.length; i++) {
+            if (managedContracts[contractAddresses[i]].isManaged) {
+                (bool success, bytes memory result) = contractAddresses[i].staticcall(
+                    abi.encodeWithSignature("isEmergencyMode()")
+                );
+                if (success && result.length > 0) {
+                    bool isEmergency = abi.decode(result, (bool));
+                    if (isEmergency) return true;
+                }
+            }
+        }
+        return false;
     }
 
     // --- CONTRACT MANAGEMENT ---
@@ -331,18 +481,6 @@ contract SecurityGovernance is
         require(success, "Unpause call failed");
     }
 
-    // --- TREASURY MANAGEMENT ---
-    function setTreasuryWallet(address _newTreasury) external override onlyRole(GOVERNANCE_ROLE) {
-        ValidationLib.validateAddress(_newTreasury);
-        address oldTreasury = treasuryWallet;
-        treasuryWallet = _newTreasury;
-        emit TreasuryWalletChanged(oldTreasury, _newTreasury);
-    }
-
-    function getTreasuryWallet() external view override returns (address) {
-        return treasuryWallet;
-    }
-
     // --- GOVERNANCE SETTINGS ---
     function setRequiredSignatures(uint256 _requiredSignatures) external onlyRole(GOVERNANCE_ROLE) {
         if (_requiredSignatures == 0) revert InvalidSignatureRequirement();
@@ -363,97 +501,6 @@ contract SecurityGovernance is
     function setEmergencyTransactionDelay(uint256 _delay) external onlyRole(GOVERNANCE_ROLE) {
         ValidationLib.validateDelay(_delay, 1 hours, 7 days);
         emergencyTransactionDelay = _delay;
-    }
-
-    // --- INTERFACE IMPLEMENTATIONS ---
-    function setSecurityParameters(string calldata paramName, uint256 value) external override onlyRole(PARAM_MANAGER_ROLE) {
-        bytes32 proposalId = this.proposeParameterChange(paramName, value);
-        // Auto-execute if caller has GOVERNANCE_ROLE
-        if (hasRole(GOVERNANCE_ROLE, msg.sender) && requiredSignatures == 1) {
-            _executeParameterChange(proposalId);
-        }
-    }
-
-    function getSecurityParameter(string calldata paramName) external view override returns (uint256) {
-        return securityParameters[paramName];
-    }
-
-    function grantRole(bytes32 role, address account) public override(AccessControlUpgradeable, IGovernance) onlyRole(getRoleAdmin(role)) {
-        super.grantRole(role, account);
-    }
-
-    function revokeRole(bytes32 role, address account) public override(AccessControlUpgradeable, IGovernance) onlyRole(getRoleAdmin(role)) {
-        super.revokeRole(role, account);
-    }
-
-    function hasRole(bytes32 role, address account) public view override(AccessControlUpgradeable, IGovernance) returns (bool) {
-        return super.hasRole(role, account);
-    }
-
-    function authorizeUpgrade(address newImplementation) external override onlyRole(UPGRADE_ROLE) {
-        _authorizeUpgrade(newImplementation);
-    }
-
-    function getImplementation() external view override returns (address) {
-        return _getImplementation();
-    }
-
-    function activateEmergencyMode() external override onlyRole(EMERGENCY_ROLE) {
-        // Activate emergency mode on all managed contracts
-        address[] memory contractAddresses = _getManagedContractAddresses();
-        
-        for (uint256 i = 0; i < contractAddresses.length; i++) {
-            if (managedContracts[contractAddresses[i]].isManaged) {
-                (bool success,) = contractAddresses[i].call(
-                    abi.encodeWithSignature("activateEmergencyMode()")
-                );
-                // Continue even if some calls fail
-            }
-        }
-    }
-
-    function deactivateEmergencyMode() external override onlyRole(GOVERNANCE_ROLE) {
-        // Deactivate emergency mode on all managed contracts
-        address[] memory contractAddresses = _getManagedContractAddresses();
-        
-        for (uint256 i = 0; i < contractAddresses.length; i++) {
-            if (managedContracts[contractAddresses[i]].isManaged) {
-                (bool success,) = contractAddresses[i].call(
-                    abi.encodeWithSignature("deactivateEmergencyMode()")
-                );
-                // Continue even if some calls fail
-            }
-        }
-    }
-
-    function isEmergencyModeActive() external view override returns (bool) {
-        // Check if any managed contract is in emergency mode
-        address[] memory contractAddresses = _getManagedContractAddresses();
-        
-        for (uint256 i = 0; i < contractAddresses.length; i++) {
-            if (managedContracts[contractAddresses[i]].isManaged) {
-                (bool success, bytes memory result) = contractAddresses[i].staticcall(
-                    abi.encodeWithSignature("isEmergencyMode()")
-                );
-                if (success && result.length > 0) {
-                    bool isEmergency = abi.decode(result, (bool));
-                    if (isEmergency) return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    function getEmergencyTransaction(bytes32 txHash) external view override returns (
-        address target,
-        uint256 value,
-        bytes memory data,
-        uint256 executeAfter,
-        bool executed,
-        address proposer,
-        uint256 proposedAt
-    ) {
-        return emergencyTransactions.getTransaction(txHash);
     }
 
     // --- VIEW FUNCTIONS ---
@@ -597,7 +644,14 @@ contract SecurityGovernance is
     }
 
     // --- INTERNAL HELPERS ---
-    function _getManagedContractAddresses() internal view returns (address[] memory) {
+    function _initializeRoleTracking(bytes32 role, address account) internal {
+        if (roleMembers[role].length == 0 || roleMemberIndex[role][account] == 0) {
+            roleMembers[role].push(account);
+            roleMemberIndex[role][account] = roleMembers[role].length - 1;
+        }
+    }
+
+    function _getManagedContractAddresses() internal pure returns (address[] memory) {
         // This would require tracking managed contract addresses in an array
         // Simplified implementation - in practice, you'd maintain a separate array
         address[] memory addresses = new address[](0);
@@ -605,7 +659,12 @@ contract SecurityGovernance is
     }
 
     function _getImplementation() internal view returns (address) {
-        return _getImplementation();
+        bytes32 slot = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+        address implementation;
+        assembly {
+            implementation := sload(slot)
+        }
+        return implementation;
     }
 
     // --- EMERGENCY RECOVERY ---
@@ -617,7 +676,7 @@ contract SecurityGovernance is
         require(token != address(0), "Invalid token");
         require(to != address(0), "Invalid recipient");
         
-        IERC20Upgradeable(token).transfer(to, amount);
+        IERC20(token).transfer(to, amount);
     }
 
     function emergencyRecoverETH(

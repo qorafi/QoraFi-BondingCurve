@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -215,6 +215,7 @@ library LiquidityLib {
         address recipient,
         uint256 deadline
     ) internal returns (uint256 actualAmountA, uint256 actualAmountB, uint256 liquidity) {
+        // Validate inputs
         if (tokenA == address(0) || tokenB == address(0)) revert InvalidTokens();
         if (slippageBps > MAX_BPS) revert LiquidityFailed();
 
@@ -226,6 +227,37 @@ library LiquidityLib {
         uint256 minAmountA = Math.mulDiv(amountA, MAX_BPS - slippageBps, MAX_BPS);
         uint256 minAmountB = Math.mulDiv(amountB, MAX_BPS - slippageBps, MAX_BPS);
 
+        // Execute liquidity addition
+        (actualAmountA, actualAmountB, liquidity) = _executeLiquidityAdd(
+            router,
+            tokenA,
+            tokenB,
+            amountA,
+            amountB,
+            minAmountA,
+            minAmountB,
+            recipient,
+            deadline
+        );
+
+        // Reset allowances
+        _resetAllowances(tokenA, tokenB, router, amountA, amountB);
+    }
+
+    /**
+     * @notice Internal function to execute liquidity addition
+     */
+    function _executeLiquidityAdd(
+        address router,
+        address tokenA,
+        address tokenB,
+        uint256 amountA,
+        uint256 amountB,
+        uint256 minAmountA,
+        uint256 minAmountB,
+        address recipient,
+        uint256 deadline
+    ) private returns (uint256 actualAmountA, uint256 actualAmountB, uint256 liquidity) {
         try IRouter(router).addLiquidity(
             tokenA,
             tokenB,
@@ -241,19 +273,23 @@ library LiquidityLib {
             liquidity = _liquidity;
             
             if (liquidity == 0) {
-                // Reset allowances before reverting
-                IERC20(tokenA).safeDecreaseAllowance(router, amountA);
-                IERC20(tokenB).safeDecreaseAllowance(router, amountB);
                 revert InsufficientLiquidityMinted();
             }
         } catch {
-            // Reset allowances on failure
-            IERC20(tokenA).safeDecreaseAllowance(router, amountA);
-            IERC20(tokenB).safeDecreaseAllowance(router, amountB);
             revert LiquidityFailed();
         }
+    }
 
-        // Reset remaining allowances
+    /**
+     * @notice Internal function to reset allowances
+     */
+    function _resetAllowances(
+        address tokenA,
+        address tokenB,
+        address router,
+        uint256 amountA,
+        uint256 amountB
+    ) private {
         IERC20(tokenA).safeDecreaseAllowance(router, amountA);
         IERC20(tokenB).safeDecreaseAllowance(router, amountB);
     }
@@ -558,9 +594,9 @@ library MathHelperLib {
      * @notice Finds minimum of two numbers
      * @param a First number
      * @param b Second number
-     * @return min Minimum value
+     * @return minValue Minimum value
      */
-    function min(uint256 a, uint256 b) internal pure returns (uint256 min) {
+    function min(uint256 a, uint256 b) internal pure returns (uint256 minValue) {
         return a < b ? a : b;
     }
 
@@ -568,15 +604,29 @@ library MathHelperLib {
      * @notice Finds maximum of two numbers
      * @param a First number
      * @param b Second number
-     * @return max Maximum value
+     * @return maxValue Maximum value
      */
-    function max(uint256 a, uint256 b) internal pure returns (uint256 max) {
+    function max(uint256 a, uint256 b) internal pure returns (uint256 maxValue) {
         return a > b ? a : b;
     }
 }
 
 // --- STATISTICS LIBRARY ---
 library StatisticsLib {
+    struct UserStats {
+        uint256 transactionCount;
+        uint256 totalVolume;
+        uint256 lastTransactionTime;
+        uint256 lastTransactionBlock;
+    }
+
+    struct ProtocolStats {
+        uint256 totalTransactions;
+        uint256 totalVolume;
+        uint256 uniqueUsers;
+        uint256 lastUpdateTime;
+    }
+
     /**
      * @notice Updates running statistics for a user
      * @param userStats Mapping of user statistics
@@ -638,20 +688,6 @@ library StatisticsLib {
             stats.lastTransactionBlock
         );
     }
-
-    struct UserStats {
-        uint256 transactionCount;
-        uint256 totalVolume;
-        uint256 lastTransactionTime;
-        uint256 lastTransactionBlock;
-    }
-
-    struct ProtocolStats {
-        uint256 totalTransactions;
-        uint256 totalVolume;
-        uint256 uniqueUsers;
-        uint256 lastUpdateTime;
-    }
 }
 
 // --- LEDGER INTEGRATION LIBRARY ---
@@ -677,12 +713,28 @@ library LedgerLib {
             return (false, "Invalid ledger address");
         }
 
-        try ILedger(ledger).notifyDeposit(user, amount) {
+        // Use low-level call to avoid import dependency
+        (bool callSuccess, bytes memory returnData) = ledger.call(
+            abi.encodeWithSignature("notifyDeposit(address,uint256)", user, amount)
+        );
+        
+        if (callSuccess) {
             return (true, "");
-        } catch Error(string memory reason) {
-            return (false, reason);
-        } catch (bytes memory) {
-            return (false, "Unknown error");
+        } else {
+            // Decode revert reason if available
+            if (returnData.length > 0) {
+                // Try to decode the revert reason
+                if (returnData.length >= 68) {
+                    assembly {
+                        returnData := add(returnData, 0x04)
+                    }
+                    return (false, abi.decode(returnData, (string)));
+                } else {
+                    return (false, "Call failed");
+                }
+            } else {
+                return (false, "Call failed");
+            }
         }
     }
 
@@ -716,11 +768,11 @@ library LedgerLib {
     function validateLedgerInterface(address ledger) internal returns (bool isValid) {
         if (ledger == address(0)) return false;
         
-        try ILedger(ledger).notifyDeposit(address(0), 0) {
-            return true;
-        } catch {
-            return false;
-        }
+        // Use low-level call to check interface
+        (bool success, ) = ledger.call(
+            abi.encodeWithSignature("notifyDeposit(address,uint256)", address(0), 0)
+        );
+        return success;
     }
 }
 
@@ -733,10 +785,85 @@ interface IRouter {
     function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory);
 }
 
-interface ILedger {
-    function notifyDeposit(address user, uint256 amount) external;
-}
-
 interface IERC20Metadata {
     function decimals() external view returns (uint8);
+}
+
+/**
+ * @title UtilityLibraries
+ * @notice Main contract that bundles all utility libraries for deployment and testing
+ */
+contract UtilityLibraries {
+    using SafeERC20 for IERC20;
+    
+    // Storage for testing
+    mapping(address => StatisticsLib.UserStats) private userStats;
+    StatisticsLib.ProtocolStats private protocolStats;
+    
+    function getLibraryVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+    
+    // Swap functions for testing
+    function getExpectedSwapOutput(
+        address router,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn
+    ) external view returns (uint256) {
+        return SwapLib.getExpectedSwapOutput(router, tokenIn, tokenOut, amountIn);
+    }
+    
+    // Token helper functions for testing
+    function getTokenBalance(address token, address account) external view returns (uint256) {
+        return TokenHelperLib.getBalance(token, account);
+    }
+    
+    function getTokenDecimals(address token) external view returns (uint8) {
+        return TokenHelperLib.getDecimals(token);
+    }
+    
+    function convertTokenDecimals(
+        uint256 amount,
+        uint8 fromDecimals,
+        uint8 toDecimals
+    ) external pure returns (uint256) {
+        return TokenHelperLib.convertDecimals(amount, fromDecimals, toDecimals);
+    }
+    
+    // Math helper functions for testing
+    function calculatePercentage(uint256 amount, uint256 bps) external pure returns (uint256) {
+        return MathHelperLib.calculatePercentage(amount, bps);
+    }
+    
+    function calculateSlippage(uint256 amount, uint256 slippageBps) external pure returns (uint256) {
+        return MathHelperLib.calculateSlippage(amount, slippageBps);
+    }
+    
+    function sqrt(uint256 x) external pure returns (uint256) {
+        return MathHelperLib.sqrt(x);
+    }
+    
+    // Statistics functions for testing
+    function updateUserStats(address user, uint256 amount) external {
+        StatisticsLib.updateUserStats(userStats, user, amount);
+    }
+    
+    function getUserStats(address user) external view returns (
+        uint256 transactionCount,
+        uint256 totalVolume,
+        uint256 lastTransactionTime,
+        uint256 lastTransactionBlock
+    ) {
+        return StatisticsLib.getUserStats(userStats, user);
+    }
+    
+    // Ledger functions for testing
+    function safeNotifyLedger(
+        address ledger,
+        address user,
+        uint256 amount
+    ) external returns (bool success, string memory errorReason) {
+        return LedgerLib.safeNotifyLedger(ledger, user, amount);
+    }
 }

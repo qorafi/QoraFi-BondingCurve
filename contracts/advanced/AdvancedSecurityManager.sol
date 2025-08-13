@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "../core/CoreSecurityManager.sol";
 import "../libraries/SecurityLibraries.sol";
@@ -15,9 +15,12 @@ contract AdvancedSecurityManager is CoreSecurityManager {
     using ValidationLib for *;
 
     // --- ADVANCED STATE ---
+    // State variables specific to AdvancedSecurityManager
     mapping(address => uint256) public userRiskScores;
     mapping(bytes32 => EmergencyLib.EmergencyTransaction) public advancedEmergencyTransactions;
     mapping(uint256 => uint256) public advancedBlockPriceUpdates; // Flash loan detection
+    // userTransactionCounts is inherited from CoreSecurityManager
+    mapping(address => uint256[]) private userTransactionTimestamps;
     
     bool public advancedEmergencyModeActive;
     uint256 public advancedEmergencyModeActivatedAt;
@@ -50,7 +53,17 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         uint256 emergencyTriggeredCount;
     }
 
+    struct RiskConfig {
+        uint256 highRiskThreshold;
+        uint256 suspiciousActivityWindow;
+        uint256 maxTransactionsPerWindow;
+        uint256 advancedEmergencyTransactionDelay;
+        uint256 advancedMaxUpdatesPerBlock;
+        uint256 advancedFlashLoanDetectionWindow;
+    }
+
     // --- EVENTS ---
+    event EmergencyModeToggled(bool enabled);
     event AdvancedEmergencyModeToggled(bool enabled);
     event AdvancedEmergencyTransactionProposed(bytes32 indexed txHash, address indexed proposer, address target, uint256 value, bytes data, uint256 executeAfter);
     event AdvancedEmergencyTransactionExecuted(bytes32 indexed txHash, address indexed executor);
@@ -82,18 +95,37 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         maxTransactionsPerWindow = 10;
     }
 
-    // --- ADVANCED SECURITY CHECKS ---
-    function advancedPreDepositCheck(address user, uint256 amount) external {
-        // Run core checks first
-        this.preDepositCheck(user, amount);
+    // --- INTERNAL HELPER FUNCTIONS ---
+    function _checkMEVProtection(address user, uint256 amount) internal view returns (bool, string memory) {
+        // Basic MEV protection logic
+        if (mevProtection.minDepositInterval > 0) {
+            uint256 blocksSinceLastDeposit = block.number - mevProtection.lastDepositBlock[user];
+            if (blocksSinceLastDeposit < mevProtection.minDepositInterval) {
+                return (false, "Deposit too frequent");
+            }
+        }
         
-        // Advanced checks
-        _checkUserRiskScore(user);
-        _checkSuspiciousActivity(user, amount);
-        _checkAdvancedFlashLoanActivity();
+        if (mevProtection.maxDepositPerBlock > 0) {
+            if (mevProtection.blockDepositTotal[block.number] + amount > mevProtection.maxDepositPerBlock) {
+                return (false, "Block deposit limit exceeded");
+            }
+        }
         
-        // Update behavior analysis
-        _updateUserBehavior(user, amount);
+        return (true, "");
+    }
+    
+    function _checkCircuitBreaker(uint256 amount) internal view returns (bool, string memory) {
+        if (circuitBreaker.triggered && block.timestamp < circuitBreaker.triggerTime + circuitBreaker.cooldownPeriod) {
+            return (false, "Circuit breaker active");
+        }
+        
+        // Check if amount would trigger circuit breaker
+        uint256 newVolume = circuitBreaker.currentVolume + amount;
+        if (circuitBreaker.volumeThreshold > 0 && newVolume > circuitBreaker.volumeThreshold) {
+            return (false, "Amount would trigger circuit breaker");
+        }
+        
+        return (true, "");
     }
 
     function _checkUserRiskScore(address user) internal view {
@@ -146,6 +178,10 @@ contract AdvancedSecurityManager is CoreSecurityManager {
             behavior.avgTransactionSize = (behavior.avgTransactionSize * 9 + amount) / 10; // Weighted average
         }
         
+        // Track transaction timestamp
+        userTransactionTimestamps[user].push(block.timestamp);
+        userTransactionCounts[user]++;
+        
         // Track large transactions
         if (amount > 100000 * 10**6) { // $100k+
             behavior.lastLargeTransaction = block.timestamp;
@@ -159,15 +195,69 @@ contract AdvancedSecurityManager is CoreSecurityManager {
     }
 
     function _getRecentTransactionCount(address user) internal view returns (uint256) {
-        // Simplified implementation - would track timestamps in a more sophisticated way
-        return userTransactionCounts[user];
+        uint256[] memory timestamps = userTransactionTimestamps[user];
+        uint256 count = 0;
+        uint256 windowStart = block.timestamp - suspiciousActivityWindow;
+        
+        for (uint256 i = timestamps.length; i > 0; i--) {
+            if (timestamps[i-1] >= windowStart) {
+                count++;
+            } else {
+                break; // Assuming timestamps are ordered
+            }
+        }
+        return count;
     }
 
     function _getCurrentDay() internal view returns (uint256) {
         return block.timestamp / 1 days;
     }
 
-    // --- EMERGENCY SYSTEM (FIXED: Now uses advancedEmergencyModeActive consistently) ---
+    // --- ADVANCED SECURITY CHECKS ---
+    function advancedPreDepositCheck(address user, uint256 amount) external {
+        // Run core checks first
+        this.preDepositCheck(user, amount);
+        
+        // Advanced checks
+        _checkUserRiskScore(user);
+        _checkSuspiciousActivity(user, amount);
+        _checkAdvancedFlashLoanActivity();
+        
+        // Update behavior analysis
+        _updateUserBehavior(user, amount);
+    }
+
+    // Enhanced user deposit check with advanced features
+    function canUserDepositAdvanced(address user, uint256 amount) external view returns (bool canDeposit, string memory reason) {
+        // Check if paused first
+        if (paused()) return (false, "Contract paused");
+        
+        // Emergency mode checks
+        if (paused()) return (false, "Emergency mode active");
+        if (advancedEmergencyModeActive) return (false, "Advanced emergency mode active");
+        
+        // Risk score check
+        if (userRiskScores[user] > highRiskThreshold) return (false, "High risk user");
+        
+        // Flagged user check
+        if (userBehavior[user].flagged) return (false, "User flagged for suspicious activity");
+        
+        // Flash loan protection
+        if (newTokenMode && advancedBlockPriceUpdates[block.number] >= advancedMaxUpdatesPerBlock) {
+            return (false, "Flash loan protection triggered");
+        }
+        
+        // Run basic MEV and circuit breaker checks
+        (bool mevCheck, string memory mevReason) = _checkMEVProtection(user, amount);
+        if (!mevCheck) return (false, mevReason);
+        
+        (bool circuitCheck, string memory circuitReason) = _checkCircuitBreaker(amount);
+        if (!circuitCheck) return (false, circuitReason);
+        
+        return (true, "OK");
+    }
+
+    // --- ADVANCED EMERGENCY SYSTEM ---
     function activateAdvancedEmergencyMode() external onlyRole(EMERGENCY_ROLE) {
         advancedEmergencyModeActive = true;
         advancedEmergencyModeActivatedAt = block.timestamp;
@@ -281,6 +371,68 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         emit SecurityParametersUpdated("advancedEmergencyTransactionDelay", oldDelay, _delay);
     }
 
+    // --- UTILITY FUNCTIONS ---
+    function cleanupUserTransactionHistory(address user, uint256 keepRecentHours) external onlyRole(MONITOR_ROLE) {
+        require(keepRecentHours >= 1, "Must keep at least 1 hour");
+        uint256 cutoffTime = block.timestamp - (keepRecentHours * 1 hours);
+        
+        uint256[] storage timestamps = userTransactionTimestamps[user];
+        uint256 keepFromIndex = 0;
+        
+        // Find the first timestamp to keep
+        for (uint256 i = 0; i < timestamps.length; i++) {
+            if (timestamps[i] >= cutoffTime) {
+                keepFromIndex = i;
+                break;
+            }
+        }
+        
+        // Remove old timestamps
+        if (keepFromIndex > 0) {
+            for (uint256 i = 0; i < timestamps.length - keepFromIndex; i++) {
+                timestamps[i] = timestamps[i + keepFromIndex];
+            }
+            
+            // Reduce array length
+            for (uint256 i = 0; i < keepFromIndex; i++) {
+                timestamps.pop();
+            }
+        }
+    }
+
+    // --- MISSING FUNCTIONS FOR COMPATIBILITY ---
+    
+    /**
+     * @notice Get emergency mode status - maps to base paused state
+     * @return bool indicating if emergency mode is active
+     */
+    function emergencyMode() external view returns (bool) {
+        return paused();
+    }
+
+    /**
+     * @notice Get emergency transaction delay - returns the advanced delay
+     * @return uint256 delay in seconds
+     */
+    function emergencyTransactionDelay() external view returns (uint256) {
+        return advancedEmergencyTransactionDelay;
+    }
+
+    /**
+     * @notice Get risk configuration settings
+     * @return RiskConfig struct with all risk-related parameters
+     */
+    function getRiskConfig() external view returns (RiskConfig memory) {
+        return RiskConfig({
+            highRiskThreshold: highRiskThreshold,
+            suspiciousActivityWindow: suspiciousActivityWindow,
+            maxTransactionsPerWindow: maxTransactionsPerWindow,
+            advancedEmergencyTransactionDelay: advancedEmergencyTransactionDelay,
+            advancedMaxUpdatesPerBlock: advancedMaxUpdatesPerBlock,
+            advancedFlashLoanDetectionWindow: advancedFlashLoanDetectionWindow
+        });
+    }
+
     // --- ADVANCED VIEW FUNCTIONS ---
     function getUserRiskAssessment(address user) external view returns (
         uint256 riskScore,
@@ -356,31 +508,109 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         );
     }
 
-    // --- OVERRIDE FOR EMERGENCY MODE (FIXED: Now consistent with variable name) ---
-    function isEmergencyMode() external view override returns (bool) {
-        return advancedEmergencyModeActive;
-    }
-
-    // Enhanced user deposit check with advanced features
-    function canUserDeposit(address user, uint256 amount) external view override returns (bool canDeposit, string memory reason) {
-        // Run basic checks first
-        (bool basicCheck, string memory basicReason) = super.canUserDeposit(user, amount);
-        if (!basicCheck) return (false, basicReason);
+    function getUserTransactionHistory(address user, uint256 maxRecords) external view returns (
+        uint256[] memory timestamps,
+        uint256 totalTransactions
+    ) {
+        uint256[] memory userTimestamps = userTransactionTimestamps[user];
+        uint256 recordsToReturn = userTimestamps.length > maxRecords ? maxRecords : userTimestamps.length;
         
-        // Emergency mode check
-        if (advancedEmergencyModeActive) return (false, "Advanced emergency mode active");
+        uint256[] memory recentTimestamps = new uint256[](recordsToReturn);
         
-        // Risk score check
-        if (userRiskScores[user] > highRiskThreshold) return (false, "High risk user");
-        
-        // Flagged user check
-        if (userBehavior[user].flagged) return (false, "User flagged for suspicious activity");
-        
-        // Flash loan protection
-        if (newTokenMode && advancedBlockPriceUpdates[block.number] >= advancedMaxUpdatesPerBlock) {
-            return (false, "Flash loan protection triggered");
+        // Return most recent transactions
+        for (uint256 i = 0; i < recordsToReturn; i++) {
+            recentTimestamps[i] = userTimestamps[userTimestamps.length - recordsToReturn + i];
         }
         
-        return (true, "OK");
+        return (recentTimestamps, userTimestamps.length);
+    }
+
+    // --- BASE EMERGENCY MODE FUNCTIONS ---
+    /**
+     * @notice Activates the base emergency mode
+     * @dev This function implements the missing activateEmergencyMode functionality
+     */
+    function activateEmergencyMode() external override onlyRole(EMERGENCY_ROLE) {
+        // Set emergency mode state (assuming these exist in parent or we track them here)
+        _pause();
+        emit EmergencyModeToggled(true);
+    }
+
+    /**
+     * @notice Deactivates the base emergency mode
+     * @dev Companion function to activateEmergencyMode
+     */
+    function deactivateEmergencyMode() external override onlyRole(GOVERNANCE_ROLE) {
+        _unpause();
+        emit EmergencyModeToggled(false);
+    }
+
+    /**
+     * @notice Check if base emergency mode is active
+     * @return bool indicating if emergency mode is active (checks pause state)
+     */
+    function isEmergencyModeActive() external view override returns (bool) {
+        return paused();
+    }
+
+    // --- EMERGENCY MODE STATUS ---
+    function isAdvancedEmergencyModeActive() external view returns (bool) {
+        return advancedEmergencyModeActive;
+    }
+    
+    // Check if any emergency mode is active
+    function isAnyEmergencyModeActive() external view returns (bool) {
+        return paused() || advancedEmergencyModeActive;
+    }
+
+    // --- COMPREHENSIVE HEALTH CHECK ---
+    function getSystemHealthStatus() external view returns (
+        bool systemHealthy,
+        string[] memory warnings,
+        string[] memory errors
+    ) {
+        string[] memory tempWarnings = new string[](10);
+        string[] memory tempErrors = new string[](10);
+        uint256 warningCount = 0;
+        uint256 errorCount = 0;
+        
+        // Check emergency modes
+        if (advancedEmergencyModeActive) {
+            tempErrors[errorCount] = "Advanced emergency mode is active";
+            errorCount++;
+        }
+        
+        // Check if paused
+        if (paused()) {
+            tempErrors[errorCount] = "Contract is paused";
+            errorCount++;
+        }
+        
+        // Check flash loan protection
+        if (newTokenMode && advancedBlockPriceUpdates[block.number] > advancedMaxUpdatesPerBlock / 2) {
+            tempWarnings[warningCount] = "High flash loan activity detected";
+            warningCount++;
+        }
+        
+        // Check daily metrics
+        DailyMetrics memory today = dailyMetrics[_getCurrentDay()];
+        if (today.emergencyTriggeredCount > 0) {
+            tempWarnings[warningCount] = "Emergency triggers occurred today";
+            warningCount++;
+        }
+        
+        // Create properly sized arrays
+        string[] memory localWarnings = new string[](warningCount);
+        string[] memory localErrors = new string[](errorCount);
+        
+        for (uint256 i = 0; i < warningCount; i++) {
+            localWarnings[i] = tempWarnings[i];
+        }
+        
+        for (uint256 i = 0; i < errorCount; i++) {
+            localErrors[i] = tempErrors[i];
+        }
+        
+        return (errorCount == 0, localWarnings, localErrors);
     }
 }

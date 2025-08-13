@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import "@openzeppelin/contracts/interfaces/IERC20.sol";
 
 // Import our modular libraries
 import "../libraries/OracleLibraries.sol";
@@ -24,10 +25,14 @@ contract EnhancedOracle is
     UUPSUpgradeable,
     IEnhancedOracle
 {
-    using TWAPLib for TWAPLib.TWAPObservation[];
     using PriceValidationLib for PriceValidationLib.PriceValidationData;
     using LiquidityMonitorLib for *;
     using FlashLoanDetectionLib for *;
+
+    // --- CONSTANTS ---
+    uint256 private constant MIN_TWAP_OBSERVATIONS = TWAPLib.MIN_TWAP_OBSERVATIONS;
+    uint256 private constant MAX_OBSERVATIONS = TWAPLib.MAX_TWAP_OBSERVATIONS;
+    uint256 private constant MAX_OBSERVATION_AGE = TWAPLib.MAX_OBSERVATION_AGE;
 
     // --- ROLES ---
     bytes32 public constant GOVERNANCE_ROLE = DEFAULT_ADMIN_ROLE;
@@ -35,7 +40,7 @@ contract EnhancedOracle is
 
     // --- STATE VARIABLES ---
     IERC20Metadata public usdtToken;
-    IERC20Supply public qorafiToken;
+    IERC20Metadata public qorafiToken;
     IUniswapV2Pair public lpPair;
 
     uint256 public cachedMarketCap;
@@ -118,7 +123,7 @@ contract EnhancedOracle is
         _grantRole(ORACLE_UPDATER_ROLE, _oracleUpdater);
 
         usdtToken = IERC20Metadata(_usdt);
-        qorafiToken = IERC20Supply(_qorafi);
+        qorafiToken = IERC20Metadata(_qorafi);
         lpPair = IUniswapV2Pair(_lpPair);
         qorafiIsToken0InPair = lpPair.token0() == _qorafi;
         mcLowerLimit = _mcLower;
@@ -169,17 +174,18 @@ contract EnhancedOracle is
             qorafiIsToken0InPair
         );
         
-        (uint256 newIndex, uint256 newValidCount) = twapObservations.addObservation(
-            observationIndex,
-            validObservationCount,
-            price0,
-            price1,
-            ts,
-            currentLiquidity
-        );
+        // Create first observation using library struct
+        TWAPLib.TWAPObservation memory newObs = TWAPLib.TWAPObservation({
+            price0Cumulative: price0,
+            price1Cumulative: price1,
+            timestamp: ts,
+            isValid: true,
+            liquiditySnapshot: currentLiquidity
+        });
         
-        observationIndex = newIndex;
-        validObservationCount = newValidCount;
+        twapObservations.push(newObs);
+        observationIndex = 0;
+        validObservationCount = 1;
     }
 
     // --- CORE ORACLE FUNCTIONS ---
@@ -202,11 +208,7 @@ contract EnhancedOracle is
         _updateTWAPObservations();
         
         // Calculate new price using enhanced TWAP
-        uint256 newPrice = twapObservations.calculateEnhancedTWAP(
-            qorafiIsToken0InPair,
-            usdtDecimals,
-            newTokenMode
-        );
+        uint256 newPrice = _calculateTWAPPrice();
         
         // Enhanced price validation using library
         if (qorafiPriceTwap > 0) {
@@ -214,7 +216,13 @@ contract EnhancedOracle is
             priceValidation.validatePriceImpact(newPrice);
         }
 
-        uint256 totalSupply = qorafiToken.totalSupply();
+        // Get total supply using standard ERC20 interface
+        uint256 totalSupply;
+        try IERC20(address(qorafiToken)).totalSupply() returns (uint256 supply) {
+            totalSupply = supply;
+        } catch {
+            revert("Failed to get total supply");
+        }
         require(totalSupply > 0, "Invalid total supply");
         
         uint256 newMarketCap = Math.mulDiv(totalSupply, newPrice, 1e18);
@@ -243,7 +251,7 @@ contract EnhancedOracle is
         LiquidityMonitorLib.validateLiquidityDepth(currentLiquidity, minimumUsdtLiquidity);
         
         // Update liquidity check timestamp using library
-        (bool isHealthy, bool shouldUpdate) = LiquidityMonitorLib.checkLiquidityHealth(
+        ( , bool shouldUpdate) = LiquidityMonitorLib.checkLiquidityHealth(
             currentLiquidity,
             minimumUsdtLiquidity,
             lastLiquidityCheck,
@@ -270,17 +278,27 @@ contract EnhancedOracle is
             qorafiIsToken0InPair
         );
         
-        (uint256 newIndex, uint256 newValidCount) = twapObservations.addObservation(
-            observationIndex,
-            validObservationCount,
-            price0,
-            price1,
-            currentTimestamp,
-            currentLiquidity
-        );
+        // Create new observation using library struct
+        TWAPLib.TWAPObservation memory newObs = TWAPLib.TWAPObservation({
+            price0Cumulative: price0,
+            price1Cumulative: price1,
+            timestamp: currentTimestamp,
+            isValid: true,
+            liquiditySnapshot: currentLiquidity
+        });
         
-        observationIndex = newIndex;
-        validObservationCount = newValidCount;
+        // Add to circular buffer
+        if (twapObservations.length < MAX_OBSERVATIONS) {
+            twapObservations.push(newObs);
+            observationIndex = twapObservations.length - 1;
+        } else {
+            observationIndex = (observationIndex + 1) % MAX_OBSERVATIONS;
+            twapObservations[observationIndex] = newObs;
+        }
+        
+        if (validObservationCount < MAX_OBSERVATIONS) {
+            validObservationCount++;
+        }
         
         emit TWAPObservationAdded(price0, price1, currentTimestamp, currentLiquidity);
     }
@@ -291,7 +309,7 @@ contract EnhancedOracle is
             return fallbackPrice;
         }
         
-        if (twapObservations.length < TWAPLib.MIN_TWAP_OBSERVATIONS) return fallbackPrice;
+        if (twapObservations.length < MIN_TWAP_OBSERVATIONS) return fallbackPrice;
         
         try this.safeGetTWAPPrice() returns (uint256 price) {
             return price;
@@ -301,7 +319,32 @@ contract EnhancedOracle is
     }
 
     function safeGetTWAPPrice() external view returns (uint256) {
-        return twapObservations.calculateEnhancedTWAP(qorafiIsToken0InPair, usdtDecimals, newTokenMode);
+        return _calculateTWAPPrice();
+    }
+    
+    function _calculateTWAPPrice() internal view returns (uint256) {
+        if (validObservationCount < 2) {
+            return fallbackPrice;
+        }
+        
+        // Get the latest and oldest observations
+        TWAPLib.TWAPObservation memory latest = twapObservations[observationIndex];
+        uint256 oldestIndex = validObservationCount < MAX_OBSERVATIONS 
+            ? 0 
+            : (observationIndex + 1) % MAX_OBSERVATIONS;
+        TWAPLib.TWAPObservation memory oldest = twapObservations[oldestIndex];
+        
+        uint32 timeElapsed = latest.timestamp - oldest.timestamp;
+        if (timeElapsed == 0) return fallbackPrice;
+        
+        // Use library function to calculate period price
+        if (qorafiIsToken0InPair) {
+            uint256 price1Diff = latest.price1Cumulative - oldest.price1Cumulative;
+            return TWAPLib.calculatePeriodPrice(price1Diff, timeElapsed, qorafiIsToken0InPair, usdtDecimals);
+        } else {
+            uint256 price0Diff = latest.price0Cumulative - oldest.price0Cumulative;
+            return TWAPLib.calculatePeriodPrice(price0Diff, timeElapsed, qorafiIsToken0InPair, usdtDecimals);
+        }
     }
 
     function getCachedMarketCap() external view override returns (uint256) {
@@ -310,8 +353,8 @@ contract EnhancedOracle is
 
     function isHealthy() external view override returns (bool) {
         if (emergencyMode) return false;
-        if (block.timestamp - lastOracleUpdateTime > TWAPLib.MAX_OBSERVATION_AGE) return false;
-        if (validObservationCount < TWAPLib.MIN_TWAP_OBSERVATIONS) return false;
+        if (block.timestamp - lastOracleUpdateTime > MAX_OBSERVATION_AGE) return false;
+        if (validObservationCount < MIN_TWAP_OBSERVATIONS) return false;
         
         // Check liquidity health using library
         (uint112 reserve0, uint112 reserve1,) = lpPair.getReserves();
@@ -335,7 +378,7 @@ contract EnhancedOracle is
         require(cachedMarketCap > 0, "Market cap not initialized");
         require(cachedMarketCap <= mcUpperLimit, "Market cap too high");
         require(cachedMarketCap >= mcLowerLimit, "Market cap too low");
-        require(block.timestamp - lastOracleUpdateTime <= TWAPLib.MAX_OBSERVATION_AGE, "Oracle data stale");
+        require(block.timestamp - lastOracleUpdateTime <= MAX_OBSERVATION_AGE, "Oracle data stale");
         require(!emergencyMode, "Emergency mode active");
         
         // Additional liquidity check
@@ -359,7 +402,9 @@ contract EnhancedOracle is
         bool isValid,
         uint256 liquiditySnapshot
     ) {
-        TWAPLib.TWAPObservation memory obs = twapObservations.getLatestObservation();
+        TWAPLib.TWAPObservation memory obs = twapObservations.length > 0 
+            ? TWAPLib.getLatestObservation(twapObservations)
+            : TWAPLib.TWAPObservation(0, 0, 0, false, 0);
         return (obs.price0Cumulative, obs.price1Cumulative, obs.timestamp, obs.isValid, obs.liquiditySnapshot);
     }
 
@@ -367,7 +412,7 @@ contract EnhancedOracle is
         uint256 currentUsdtLiquidity,
         uint256 minimumRequired,
         uint256 lastCheck,
-        bool isHealthy
+        bool isCurrentlyHealthy
     ) {
         (uint112 reserve0, uint112 reserve1,) = lpPair.getReserves();
         uint256 current = LiquidityMonitorLib.getCurrentUSDTLiquidity(reserve0, reserve1, qorafiIsToken0InPair);
@@ -378,7 +423,7 @@ contract EnhancedOracle is
             liquidityCheckInterval
         );
         
-        return (current, minimumUsdtLiquidity, lastLiquidityCheck, healthy);
+        return (current, minimumUsdtLiquidity, lastCheck, healthy);
     }
 
     function getPriceValidationData() external view override returns (
@@ -400,10 +445,134 @@ contract EnhancedOracle is
     function getNewTokenSettings() external view override returns (
         bool newTokenModeActive,
         uint256 flashLoanWindow,
-        uint256 maxUpdatesPerBlock,
+        uint256 maxUpdatesLimit,
         uint256 minUsdtLiquidity
     ) {
         return (newTokenMode, flashLoanDetectionWindow, maxUpdatesPerBlock, minimumUsdtLiquidity);
+    }
+
+    // --- NEW MISSING FUNCTIONS ADDED ---
+
+    function emergencyResetObservations() external onlyRole(GOVERNANCE_ROLE) {
+        // Reset observations array but keep at least one
+        delete twapObservations;
+        validObservationCount = 0;
+        observationIndex = 0;
+        
+        // Reinitialize with current observation
+        _initializeFirstObservation();
+        
+        emit TWAPObservationAdded(
+            twapObservations[0].price0Cumulative,
+            twapObservations[0].price1Cumulative,
+            twapObservations[0].timestamp,
+            twapObservations[0].liquiditySnapshot
+        );
+    }
+
+    function getFlashLoanStats(uint256 blockNumber) external view returns (
+        uint256 updatesInBlock,
+        uint256 updatesInWindow,
+        bool isRisky
+    ) {
+        updatesInBlock = blockPriceUpdates[blockNumber];
+        
+        // Calculate window updates
+        for (uint256 i = 0; i < flashLoanDetectionWindow && i <= blockNumber; i++) {
+            updatesInWindow += blockPriceUpdates[blockNumber - i];
+        }
+        
+        isRisky = updatesInWindow > maxUpdatesPerBlock * flashLoanDetectionWindow;
+    }
+
+    function getOracleHealth() external view returns (
+        bool healthStatus,
+        string memory reason,
+        uint256 lastUpdate,
+        uint256 validObservations
+    ) {
+        lastUpdate = lastOracleUpdateTime;
+        validObservations = validObservationCount;
+        
+        if (emergencyMode) {
+            return (false, "Emergency mode active", lastUpdate, validObservations);
+        }
+        if (block.timestamp - lastOracleUpdateTime > MAX_OBSERVATION_AGE) {
+            return (false, "Oracle data stale", lastUpdate, validObservations);
+        }
+        if (validObservationCount < MIN_TWAP_OBSERVATIONS) {
+            return (false, "Insufficient observations", lastUpdate, validObservations);
+        }
+        
+        // Check liquidity
+        (uint112 reserve0, uint112 reserve1,) = lpPair.getReserves();
+        uint256 currentLiquidity = LiquidityMonitorLib.getCurrentUSDTLiquidity(
+            reserve0, reserve1, qorafiIsToken0InPair
+        );
+        
+        if (currentLiquidity < minimumUsdtLiquidity) {
+            return (false, "Insufficient liquidity", lastUpdate, validObservations);
+        }
+        
+        return (true, "Healthy", lastUpdate, validObservations);
+    }
+
+    function getMarketMetrics() external view returns (
+        uint256 currentPrice,
+        uint256 marketCap,
+        uint256 priceChange24h,
+        uint256 volumeWeightedPrice,
+        uint256 liquidityUSD
+    ) {
+        currentPrice = this.getCurrentPrice();
+        marketCap = cachedMarketCap;
+        
+        // Simplified implementations for missing data
+        priceChange24h = 0; // Would need 24h price history
+        volumeWeightedPrice = currentPrice; // Simplified
+        
+        // Calculate current liquidity in USD
+        (uint112 reserve0, uint112 reserve1,) = lpPair.getReserves();
+        uint256 usdtLiquidity = LiquidityMonitorLib.getCurrentUSDTLiquidity(
+            reserve0, reserve1, qorafiIsToken0InPair
+        );
+        liquidityUSD = usdtLiquidity * 2; // Both sides of the pair
+    }
+
+    function getLiquidityChangeRate() external view returns (uint256) {
+        if (twapObservations.length < 2) return 0;
+        
+        TWAPLib.TWAPObservation memory latest = twapObservations[observationIndex];
+        uint256 oldestIndex = validObservationCount < MAX_OBSERVATIONS 
+            ? 0 
+            : (observationIndex + 1) % MAX_OBSERVATIONS;
+        TWAPLib.TWAPObservation memory oldest = twapObservations[oldestIndex];
+        
+        return LiquidityMonitorLib.calculateLiquidityChange(
+            oldest.liquiditySnapshot,
+            latest.liquiditySnapshot
+        );
+    }
+
+    function getObservationWindow(uint256 start, uint256 count) external view returns (
+        TWAPLib.TWAPObservation[] memory observations
+    ) {
+        require(start < twapObservations.length, "Start index out of bounds");
+        
+        uint256 actualCount = count;
+        if (start + count > twapObservations.length) {
+            actualCount = twapObservations.length - start;
+        }
+        
+        observations = new TWAPLib.TWAPObservation[](actualCount);
+        for (uint256 i = 0; i < actualCount; i++) {
+            observations[i] = twapObservations[start + i];
+        }
+    }
+
+    // Add getter for validObservationCount as function for tests
+    function getValidObservationCount() external view returns (uint256) {
+        return validObservationCount;
     }
 
     // --- GOVERNANCE FUNCTIONS ---
@@ -450,8 +619,12 @@ contract EnhancedOracle is
         );
     }
 
-   // Add this to complete the EnhancedOracle.sol file
-    
+    function setMarketCapLimits(uint256 _mcLower, uint256 _mcUpper) external onlyRole(GOVERNANCE_ROLE) {
+        require(_mcLower > 0 && _mcUpper > _mcLower, "Invalid limits");
+        mcLowerLimit = _mcLower;
+        mcUpperLimit = _mcUpper;
+    }
+
     function forceUpdatePrice(uint256 _newPrice) external override onlyRole(GOVERNANCE_ROLE) {
         require(_newPrice > 0, "Invalid price");
         
@@ -462,7 +635,13 @@ contract EnhancedOracle is
         
         qorafiPriceTwap = _newPrice;
         
-        uint256 totalSupply = qorafiToken.totalSupply();
+        // Get total supply using standard ERC20 interface
+        uint256 totalSupply;
+        try IERC20(address(qorafiToken)).totalSupply() returns (uint256 supply) {
+            totalSupply = supply;
+        } catch {
+            revert("Failed to get total supply");
+        }
         cachedMarketCap = Math.mulDiv(totalSupply, _newPrice, 1e18);
         lastOracleUpdateTime = block.timestamp;
         
@@ -473,7 +652,7 @@ contract EnhancedOracle is
     }
 
     function invalidateObservation(uint256 index, string calldata reason) external override onlyRole(GOVERNANCE_ROLE) {
-        uint256 newValidCount = twapObservations.invalidateObservation(index, validObservationCount);
+        uint256 newValidCount = TWAPLib.invalidateObservation(twapObservations, index, validObservationCount);
         validObservationCount = newValidCount;
         emit ObservationInvalidated(index, twapObservations[index].timestamp, reason);
     }

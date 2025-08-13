@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -430,5 +430,37 @@ library CumulativePriceLib {
                 price1Cumulative += Math.mulDiv(uint256(reserve0) * 2**112, timeElapsed, reserve1);
             }
         }
+    }
+}
+/**
+ * @title OracleLibraries
+ * @notice Main contract that bundles all oracle libraries for deployment and testing
+ */
+contract OracleLibraries {
+    function getLibraryVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+    
+    // Expose key functions for testing
+    function calculatePeriodPrice(
+        uint256 priceCumulativeDiff,
+        uint32 timeElapsed,
+        bool qorafiIsToken0,
+        uint8 usdtDecimals
+    ) external pure returns (uint256) {
+        return TWAPLib.calculatePeriodPrice(
+            priceCumulativeDiff,
+            timeElapsed,
+            qorafiIsToken0,
+            usdtDecimals
+        );
+    }
+    
+    function calculatePriceImpact(uint256 oldPrice, uint256 newPrice) external pure returns (uint256) {
+        return PriceValidationLib.calculatePriceImpact(oldPrice, newPrice);
+    }
+    
+    function validateLiquidityDepth(uint256 currentLiquidity, uint256 minimumRequired) external pure {
+        LiquidityMonitorLib.validateLiquidityDepth(currentLiquidity, minimumRequired);
     }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.24;
 
 /**
  * @title SecurityLibraries
@@ -485,5 +485,59 @@ library ValidationLib {
     function validateCircuitBreakerConfig(uint256 cooldown, uint256 window) internal pure {
         if (cooldown < 10 minutes || cooldown > 24 hours) revert InvalidConfiguration();
         if (window == 0 || window > 24 hours) revert InvalidConfiguration();
+    }
+}
+/**
+ * @title SecurityLibraries
+ * @notice Main contract that bundles all security libraries for deployment and testing
+ */
+contract SecurityLibraries {
+    using MEVLib for MEVLib.MEVProtection;
+    using CircuitBreakerLib for CircuitBreakerLib.CircuitBreaker;
+    
+    // Storage for testing
+    MEVLib.MEVProtection private mevProtection;
+    CircuitBreakerLib.CircuitBreaker private circuitBreaker;
+    mapping(bytes32 => EmergencyLib.EmergencyTransaction) private emergencyTxs;
+    
+    function getLibraryVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+    
+    // MEV functions for testing
+    function validateDeposit(address user, uint256 amount) external view returns (bool isValid, string memory reason) {
+        return mevProtection.validateDeposit(user, amount);
+    }
+    
+    function updatePostDeposit(address user, uint256 amount) external {
+        mevProtection.updatePostDeposit(user, amount);
+    }
+    
+    // Circuit breaker functions for testing
+    function checkCircuitBreaker() external view {
+        circuitBreaker.check();
+    }
+    
+    function updateCircuitBreaker(uint256 amount) external returns (bool triggered) {
+        return circuitBreaker.update(amount);
+    }
+    
+    // Validation functions for testing
+    function validateAmount(uint256 amount, uint256 minAmount, uint256 maxAmount) external pure {
+        ValidationLib.validateAmount(amount, minAmount, maxAmount);
+    }
+    
+    function validateAddress(address addr) external pure {
+        ValidationLib.validateAddress(addr);
+    }
+    
+    // Emergency functions for testing
+    function proposeEmergencyTransaction(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        uint256 delay
+    ) external returns (bytes32) {
+        return EmergencyLib.proposeTransaction(emergencyTxs, target, value, data, delay, msg.sender);
     }
 }
