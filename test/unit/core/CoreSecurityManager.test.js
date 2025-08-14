@@ -8,21 +8,24 @@ describe("CoreSecurityManager", function () {
     const [owner, user1, user2, treasury, governance, emergency, monitor] = await ethers.getSigners();
     
     // Deploy mock tokens
-    const MockERC20 = await ethers.getContractFactory("MockERC20");
-    const usdt = await MockERC20.deploy("Mock USDT", "USDT", 6, ethers.parseUnits("1000000", 6));
-    const qorafi = await MockERC20.deploy("Qorafi Token", "QORAFI", 18, ethers.parseEther("1000000"));
-    
-    // Deploy CoreSecurityManager WITHOUT library linking
-    const CoreSecurityManager = await ethers.getContractFactory("CoreSecurityManager");
-    
-    const coreSecurityManager = await upgrades.deployProxy(CoreSecurityManager, [
-      await usdt.getAddress(),
-      await qorafi.getAddress(),
-      treasury.address
-    ], {
-      initializer: 'initialize',
-      kind: 'uups'
-    });
+const MockERC20 = await ethers.getContractFactory("MockERC20");
+const usdt = await MockERC20.deploy("Mock USDT", "USDT", 18, ethers.parseEther("1000000"));
+await usdt.waitForDeployment();
+const qorafi = await MockERC20.deploy("Qorafi Token", "QORAFI", 18, ethers.parseEther("1000000"));
+await qorafi.waitForDeployment();
+
+// Deploy CoreSecurityManager WITHOUT library linking
+const CoreSecurityManager = await ethers.getContractFactory("CoreSecurityManager");
+
+const coreSecurityManager = await upgrades.deployProxy(CoreSecurityManager, [
+  await usdt.getAddress(),
+  await qorafi.getAddress(),
+  treasury.address
+], {
+  initializer: 'initialize',
+  kind: 'uups'
+});
+await coreSecurityManager.waitForDeployment();
     
     // Grant roles with proper error handling
     try {

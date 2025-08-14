@@ -20,22 +20,23 @@ async function main() {
   // Get required contract addresses from previous deployments
   const usdtAddress = core.CoreSecurityManager.usdtAddress;
   const qorafiAddress = core.CoreSecurityManager.qorafiAddress;
-  const routerAddress = process.env.ROUTER_ADDRESS || "0x0000000000000000000000000000000000000003"; // Add your router address
   const securityManagerAddress = advanced.AdvancedSecurityManager.address;
   const oracleAddress = core.EnhancedOracle.address;
-  const ledgerAddress = process.env.LEDGER_ADDRESS || ethers.constants.AddressZero; // Optional: Add a ledger address if you have one
+  const ledgerAddress = process.env.LEDGER_ADDRESS || ethers.ZeroAddress; // Use AddressZero for clarity
+
+  // --- FIX: Add a safety check for the router address ---
+  const routerAddress = process.env.ROUTER_ADDRESS;
+  if (!routerAddress) {
+    throw new Error("ROUTER_ADDRESS environment variable not set. This is required for deployment.");
+  }
+  console.log("✅ Using PancakeSwap Router at:", routerAddress);
 
   // Deploy EnhancedBondingCurve
   console.log("\n📈 Deploying EnhancedBondingCurve...");
-  const EnhancedBondingCurve = await ethers.getContractFactory("EnhancedBondingCurve", {
-    libraries: {
-      SwapLib: libraries.UtilityLibraries.address,
-      LiquidityLib: libraries.UtilityLibraries.address,
-      TokenHelperLib: libraries.UtilityLibraries.address,
-      ValidationLib: libraries.SecurityLibraries.address,
-      StatisticsLib: libraries.UtilityLibraries.address
-    },
-  });
+
+  // --- FIX: Remove the `libraries` object. The compiler has already included them. ---
+  // The Hardhat Upgrades plugin handles this automatically from the compiled artifact.
+  const EnhancedBondingCurve = await ethers.getContractFactory("EnhancedBondingCurve");
 
   const enhancedBondingCurve = await upgrades.deployProxy(EnhancedBondingCurve, [
     usdtAddress,
@@ -47,18 +48,21 @@ async function main() {
   ], {
     initializer: 'initialize',
     kind: 'uups',
-    unsafeAllow: ['external-library-linking']
+    // --- FIX: The `unsafeAllow` flag is no longer needed ---
   });
 
   await enhancedBondingCurve.waitForDeployment();
   const enhancedBondingCurveAddress = await enhancedBondingCurve.getAddress();
-  console.log("✅ EnhancedBondingCurve deployed to:", enhancedBondingCurveAddress);
+  console.log("✅ EnhancedBondingCurve proxy deployed to:", enhancedBondingCurveAddress);
 
   // Save deployment info
+  const implementationAddress = await upgrades.erc1967.getImplementationAddress(enhancedBondingCurveAddress);
+  console.log("✅ Implementation contract deployed to:", implementationAddress);
+
   const deployments = {
     EnhancedBondingCurve: {
       address: enhancedBondingCurveAddress,
-      implementation: await upgrades.erc1967.getImplementationAddress(enhancedBondingCurveAddress),
+      implementation: implementationAddress,
       deploymentBlock: await ethers.provider.getBlockNumber(),
     },
   };
