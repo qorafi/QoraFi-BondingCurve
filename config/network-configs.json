@@ -57,24 +57,6 @@
       "advancedMonitoring": true,
       "multiSigGovernance": true
     }
-  },
-  "sepolia": {
-    "name": "Sepolia Testnet",
-    "chainId": 11155111,
-    "gasPrice": "auto",
-    "gasLimit": 6000000,
-    "blockTime": 12,
-    "confirmations": 2,
-    "blockExplorer": "https://sepolia.etherscan.io",
-    "contracts": {
-      "usdt": "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06",
-      "weth": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
-      "router": "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506"
-    },
-    "features": {
-      "flashLoanDetection": true,
-      "advancedMonitoring": true,
-      "multiSigGovernance": true
-    }
+
   }
 }

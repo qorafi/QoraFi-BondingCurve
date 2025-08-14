@@ -78,6 +78,7 @@ contract DelegatorDistributor is AccessControl, Pausable, ReentrancyGuard {
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(PAUSER_ROLE, msg.sender);
         _grantRole(MERKLE_UPDATER_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         qorafiToken = IQoraFiToken(_qorafiTokenAddress);
         treasuryAddress = _initialTreasuryAddress;

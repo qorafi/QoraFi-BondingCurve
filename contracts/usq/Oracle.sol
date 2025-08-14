@@ -72,6 +72,7 @@ contract Oracle is AccessControl, ReentrancyGuard {
     constructor() {
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(ORACLE_EMERGENCY_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         priceDeviationBPS = 500; // 5%
         oracleStalenessThreshold = 30 minutes;
         minEmergencyPrice = 1e14; // $0.0001

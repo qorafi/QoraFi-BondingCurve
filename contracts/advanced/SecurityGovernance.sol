@@ -126,6 +126,7 @@ contract SecurityGovernance is
         _grantRole(EMERGENCY_ROLE, msg.sender);
         _grantRole(PARAM_MANAGER_ROLE, msg.sender);
         _grantRole(UPGRADE_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         // Initialize role tracking for msg.sender
         _initializeRoleTracking(GOVERNANCE_ROLE, msg.sender);
@@ -148,8 +149,8 @@ contract SecurityGovernance is
         securityParameters["minOracleUpdateInterval"] = 5 minutes;
         securityParameters["circuitBreakerCooldown"] = 2 hours;
         securityParameters["mevMinInterval"] = 5; // blocks
-        securityParameters["mevMaxPerBlock"] = 50000 * 10**6; // 50k USDT
-        securityParameters["mevMaxPerUser"] = 25000 * 10**6; // 25k USDT
+        securityParameters["mevMaxPerBlock"] = 50000 * 10**18; // 50k USDT
+        securityParameters["mevMaxPerUser"] = 25000 * 10**18; // 25k USDT
         securityParameters["maxGasPrice"] = 20 gwei;
         securityParameters["liquidityRatioBPS"] = 5000; // 50%
         securityParameters["maxSlippageBPS"] = 300; // 3%

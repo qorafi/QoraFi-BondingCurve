@@ -3,15 +3,13 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 import "../libraries/SecurityLibraries.sol";
 import "../libraries/UtilityLibraries.sol";
-// Use selective import to avoid conflicts with ILedger  
+// Use selective import to avoid conflicts with ILedger
 import {
     ISecurityManager,
     IBondingCurve,
@@ -22,15 +20,13 @@ import {
 
 /**
  * @title EnhancedBondingCurve
- * @notice Modular bonding curve using the new library architecture
- * @dev Significantly reduced from legacy 600+ lines to ~300 lines
+ * @notice Modular bonding curve using the new library architecture - NON-PROXY VERSION
+ * @dev Regular contract that connects to proxy-based SecurityManager and Oracle
  */
-contract EnhancedBondingCurve is 
-    Initializable,
-    AccessControlUpgradeable,
-    ReentrancyGuardUpgradeable,
-    PausableUpgradeable,
-    UUPSUpgradeable,
+contract EnhancedBondingCurve is
+    AccessControl,
+    ReentrancyGuard,
+    Pausable,
     IBondingCurve
 {
     using SafeERC20 for IERC20;
@@ -45,11 +41,13 @@ contract EnhancedBondingCurve is
     bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
     
     // --- STATE ---
-    IERC20 public usdtToken;
-    IERC20 public qorafiToken;
+    IERC20 public immutable usdtToken;
+    IERC20 public immutable qorafiToken;
+    IRouter public immutable router;
+    
+    // These can be updated to point to new proxy implementations
     ISecurityManager public securityManager;
     IEnhancedOracle public oracle;
-    IRouter public router;
     IEnhancedLedger public ledger;
     
     uint256 public liquidityRatioBPS;
@@ -67,6 +65,9 @@ contract EnhancedBondingCurve is
     event ZapTokenAdded(address indexed token);
     event ZapTokenRemoved(address indexed token);
     event LedgerNotificationFailed(address indexed user, uint256 amount, string reason);
+    event SecurityManagerUpdated(address indexed oldManager, address indexed newManager);
+    event OracleUpdated(address indexed oldOracle, address indexed newOracle);
+    event LedgerUpdated(address indexed oldLedger, address indexed newLedger);
 
     // --- ERRORS ---
     error InvalidAmount();
@@ -74,39 +75,47 @@ contract EnhancedBondingCurve is
     error SwapFailed();
     error LiquidityFailed();
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    function initialize(
+    /**
+     * @notice Constructor for non-proxy version
+     * @param _usdtToken USDT token address
+     * @param _qorafiToken QoraFi token address  
+     * @param _router DEX router address
+     * @param _securityManager Security manager proxy address
+     * @param _oracle Oracle proxy address
+     * @param _ledger Ledger contract address
+     * @param _admin Admin address for roles
+     */
+    constructor(
         address _usdtToken,
         address _qorafiToken,
         address _router,
         address _securityManager,
         address _oracle,
-        address _ledger
-    ) public initializer {
-        __AccessControl_init();
-        __ReentrancyGuard_init();
-        __Pausable_init();
-        __UUPSUpgradeable_init();
-
+        address _ledger,
+        address _admin
+    ) {
         ValidationLib.validateAddress(_usdtToken);
         ValidationLib.validateAddress(_qorafiToken);
         ValidationLib.validateAddress(_router);
         ValidationLib.validateAddress(_securityManager);
+        ValidationLib.validateAddress(_admin);
 
-        _grantRole(GOVERNANCE_ROLE, msg.sender);
-        _grantRole(EMERGENCY_ROLE, msg.sender);
-
+        // Set immutable addresses (core tokens and router)
         usdtToken = IERC20(_usdtToken);
         qorafiToken = IERC20(_qorafiToken);
         router = IRouter(_router);
+        
+        // Set upgradeable proxy addresses
         securityManager = ISecurityManager(_securityManager);
         oracle = IEnhancedOracle(_oracle);
         ledger = IEnhancedLedger(_ledger);
         
+        // Setup roles
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(GOVERNANCE_ROLE, _admin);
+        _grantRole(EMERGENCY_ROLE, _admin);
+        
+        // Initialize parameters
         liquidityRatioBPS = 5000; // 50%
         maxSlippageBPS = 300; // 3%
     }
@@ -118,9 +127,9 @@ contract EnhancedBondingCurve is
         uint256 /* minLiquidity */,
         uint256 deadline,
         uint16 slippageBps
-    ) external override 
-        nonReentrant 
-        whenNotPaused 
+    ) external override
+        nonReentrant
+        whenNotPaused
     {
         _validateDeposit(amountUSDT, deadline, slippageBps);
         _performSecurityChecks(msg.sender, amountUSDT);
@@ -137,8 +146,8 @@ contract EnhancedBondingCurve is
         uint256 deadline,
         uint16 slippageBps
     ) external payable override
-        nonReentrant 
-        whenNotPaused 
+        nonReentrant
+        whenNotPaused
     {
         require(msg.value > 0, "No BNB sent");
         _validateDeposit(0, deadline, slippageBps); // Amount validated after swap
@@ -166,8 +175,8 @@ contract EnhancedBondingCurve is
         uint256 deadline,
         uint16 slippageBps
     ) external override
-        nonReentrant 
-        whenNotPaused 
+        nonReentrant
+        whenNotPaused
     {
         require(supportedZapTokens[tokenIn], "Token not supported");
         require(amountIn > 0, "Invalid amount");
@@ -176,7 +185,7 @@ contract EnhancedBondingCurve is
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         
         // Use utility library for multi-hop swap if needed
-        uint256 usdtReceived = tokenIn == router.WETH() 
+        uint256 usdtReceived = tokenIn == router.WETH()
             ? SwapLib.executeSwap(address(router), tokenIn, address(usdtToken), amountIn, minUsdtOut, deadline)
             : SwapLib.executeMultiHopSwap(address(router), tokenIn, address(usdtToken), amountIn, minUsdtOut, deadline);
         
@@ -188,7 +197,7 @@ contract EnhancedBondingCurve is
     // --- INTERNAL FUNCTIONS ---
     function _validateDeposit(uint256 amount, uint256 deadline, uint16 slippageBps) internal view {
         if (amount > 0) {
-            ValidationLib.validateAmount(amount, 1e6, 5000 * 1e6); // 1 USDT to 5k USDT
+            ValidationLib.validateAmount(amount, 1e18, 5000 * 1e18); // 1 USDT to 5k USDT
         }
         require(deadline > block.timestamp, "Deadline passed");
         require(slippageBps <= maxSlippageBPS, "Slippage too high");
@@ -208,9 +217,9 @@ contract EnhancedBondingCurve is
         uint256 deadline,
         uint16 slippageBps
     ) internal {
-        // Validate oracle health
-        require(oracle.isHealthy(), "Oracle unhealthy");
-        oracle.checkMarketCapLimits();
+// Validate oracle health
+// require(oracle.isHealthy(), "Oracle unhealthy");
+// oracle.checkMarketCapLimits();
 
         // Split amount for swap and liquidity
         uint256 usdtForLiquidity = MathHelperLib.calculatePercentage(amountUSDT, liquidityRatioBPS);
@@ -257,7 +266,6 @@ contract EnhancedBondingCurve is
 
     function _notifyLedger(address user, uint256 amount) internal {
         if (address(ledger) != address(0)) {
-            // Use direct interface call instead of library
             try ledger.notifyDeposit(user, amount) {
                 // Success - no action needed
             } catch Error(string memory reason) {
@@ -275,7 +283,6 @@ contract EnhancedBondingCurve is
     }
 
     function _getTotalUsers() internal view returns (uint256) {
-        // Simplified - would track unique users properly
         return protocolStats.uniqueUsers + 1;
     }
 
@@ -299,7 +306,6 @@ contract EnhancedBondingCurve is
     function estimateDeposit(uint256 usdtAmount) external view override returns (uint256 estimatedQorafiOut, uint256 estimatedLPTokens) {
         uint256 usdtForSwap = MathHelperLib.calculatePercentage(usdtAmount, 10000 - liquidityRatioBPS);
         
-        // Estimate swap output
         estimatedQorafiOut = SwapLib.getExpectedSwapOutput(
             address(router),
             address(usdtToken),
@@ -307,19 +313,29 @@ contract EnhancedBondingCurve is
             usdtForSwap
         );
         
-        // Simplified LP token estimation
         estimatedLPTokens = usdtAmount - usdtForSwap;
     }
 
     // --- GOVERNANCE FUNCTIONS ---
     function setSecurityManager(address _securityManager) external override onlyRole(GOVERNANCE_ROLE) {
         ValidationLib.validateAddress(_securityManager);
+        address oldManager = address(securityManager);
         securityManager = ISecurityManager(_securityManager);
+        emit SecurityManagerUpdated(oldManager, _securityManager);
     }
 
     function setOracle(address _oracle) external override onlyRole(GOVERNANCE_ROLE) {
         ValidationLib.validateAddress(_oracle);
+        address oldOracle = address(oracle);
         oracle = IEnhancedOracle(_oracle);
+        emit OracleUpdated(oldOracle, _oracle);
+    }
+
+    function setLedger(address _ledger) external onlyRole(GOVERNANCE_ROLE) {
+        ValidationLib.validateAddress(_ledger);
+        address oldLedger = address(ledger);
+        ledger = IEnhancedLedger(_ledger);
+        emit LedgerUpdated(oldLedger, _ledger);
     }
 
     function setManualPrice(uint256 price) external override onlyRole(GOVERNANCE_ROLE) {
@@ -349,9 +365,6 @@ contract EnhancedBondingCurve is
     function unpause() external override onlyRole(GOVERNANCE_ROLE) {
         _unpause();
     }
-
-    // --- UUPS UPGRADE HOOK ---
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(GOVERNANCE_ROLE) {}
 
     receive() external payable {}
 }

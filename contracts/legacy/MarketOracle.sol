@@ -155,6 +155,7 @@ contract MarketOracle is Initializable, AccessControlUpgradeable, ReentrancyGuar
         
         _grantRole(GOVERNANCE_ROLE, _governance);
         _grantRole(ORACLE_UPDATER_ROLE, _oracleUpdater);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         usdtToken = IERC20Metadata(_usdt);
         qorafiToken = IERC20Supply(_qorafi);

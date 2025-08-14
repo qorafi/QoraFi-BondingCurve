@@ -134,6 +134,7 @@ contract PoolRewardDistributor is AccessControl, ReentrancyGuard, Pausable {
 
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(PAUSER_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         qorafiToken = IQoraFiToken(_qorafiTokenAddress);
         proofOfLiquidity = IProofOfLiquidity(_proofOfLiquidityAddress);

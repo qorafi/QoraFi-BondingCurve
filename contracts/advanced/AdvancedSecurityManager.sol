@@ -183,7 +183,7 @@ contract AdvancedSecurityManager is CoreSecurityManager {
         userTransactionCounts[user]++;
         
         // Track large transactions
-        if (amount > 100000 * 10**6) { // $100k+
+        if (amount > 100000 * 10**18) { // $100k+
             behavior.lastLargeTransaction = block.timestamp;
             dailyMetrics[_getCurrentDay()].largeTransactionCount++;
         }

@@ -103,6 +103,7 @@ contract RewardEngine is AccessControl, ReentrancyGuard, Pausable {
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(REWARD_MANAGER_ROLE, msg.sender);
         _grantRole(POL_VAULT_ROLE, _polVaultAddress);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         qorafiToken = IQoraFiToken(_qorafiTokenAddress);
         stakingToken = IUniswapV2Pair(_stakingTokenAddress);

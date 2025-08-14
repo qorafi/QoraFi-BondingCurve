@@ -404,7 +404,7 @@ library ValidationLib {
 
     uint256 public constant MAX_BPS = 10000;
     uint256 public constant MIN_DEPOSIT_INTERVAL_BLOCKS = 5;
-    uint256 public constant MAX_SINGLE_DEPOSIT_NEW_TOKEN = 5000 * 10**6;
+    uint256 public constant MAX_SINGLE_DEPOSIT_NEW_TOKEN = 5000 * 10**18;
 
     /**
      * @notice Validates deposit amount

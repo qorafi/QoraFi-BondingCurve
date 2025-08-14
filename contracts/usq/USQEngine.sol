@@ -177,6 +177,7 @@ contract USQEngine is AccessControl, ReentrancyGuard, Pausable, ParameterValidat
         _grantRole(COLLATERAL_MANAGER_ROLE, msg.sender);
         _grantRole(LIQUIDATOR_ROLE, msg.sender);
         _grantRole(EMERGENCY_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         usq = new USQ();
         treasuryAddress = _initialTreasuryAddress;

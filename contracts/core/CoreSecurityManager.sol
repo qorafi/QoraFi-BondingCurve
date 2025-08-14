@@ -100,6 +100,7 @@ contract CoreSecurityManager is
         _grantRole(PAUSER_ROLE, msg.sender);
         _grantRole(EMERGENCY_ROLE, msg.sender);
         _grantRole(MONITOR_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         liquidityRatioBPS = 5000;
         maxSlippageBPS = 300;
@@ -108,17 +109,20 @@ contract CoreSecurityManager is
         newTokenMode = true;
         maxGasPrice = 20 gwei;
         
+        // FIX: Updated MEV and Circuit Breaker values to use 18 decimals for BSC
+        uint256 usdtDecimals = 10**18;
+
         // Initialize MEV protection with conservative settings
         mevProtection.minDepositInterval = ValidationLib.MIN_DEPOSIT_INTERVAL_BLOCKS;
-        mevProtection.maxDepositPerBlock = 50000 * 10**6; // 50k USDT per block
-        mevProtection.maxDepositPerUser = 25000 * 10**6; // 25k USDT per user per day
+        mevProtection.maxDepositPerBlock = 50000 * usdtDecimals; // 50k USDT per block
+        mevProtection.maxDepositPerUser = 25000 * usdtDecimals; // 25k USDT per user per day
         
         // Initialize circuit breaker
         circuitBreaker = CircuitBreakerLib.CircuitBreaker({
             triggered: false,
             triggerTime: 0,
             cooldownPeriod: 2 hours,
-            volumeThreshold: 100000 * 10**6, // 100k USDT per hour
+            volumeThreshold: 100000 * usdtDecimals, // 100k USDT per hour
             currentVolume: 0,
             windowStart: block.timestamp,
             windowDuration: 1 hours,
@@ -228,7 +232,7 @@ contract CoreSecurityManager is
         uint256 lastDepositBlockNumber,
         bool canDeposit
     ) {
-        (bool _canDeposit,) = this.canUserDeposit(user, 1e6);
+        (bool _canDeposit,) = this.canUserDeposit(user, 1e18); // Use 18 decimals for check
         return (
             userTransactionCounts[user], 
             userTotalDeposited[user], 
@@ -254,7 +258,7 @@ contract CoreSecurityManager is
         bool flaggedForReview,
         uint256 lastDepositTime
     ) {
-        (bool _canDeposit,) = this.canUserDeposit(user, 1e6);
+        (bool _canDeposit,) = this.canUserDeposit(user, 1e18); // Use 18 decimals for check
         (, , , uint256 _dailyUsed,) = mevProtection.getUserStatus(user);
         
         return (

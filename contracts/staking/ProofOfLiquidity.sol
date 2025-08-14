@@ -51,6 +51,7 @@ contract ProofOfLiquidity is AccessControl, ReentrancyGuard, Pausable {
         require(_stakingTokenAddress != address(0), "Invalid staking token address");
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(PAUSER_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         stakingToken = IUniswapV2Pair(_stakingTokenAddress);
     }

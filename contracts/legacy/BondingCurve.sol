@@ -52,7 +52,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
     bytes32 public constant GOVERNANCE_ROLE = DEFAULT_ADMIN_ROLE;
     bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
     
-    uint256 private constant MIN_DEPOSIT = 1e6; // 1 USDT
+    uint256 private constant MIN_DEPOSIT = 1e18; // 1 USDT
     uint256 private constant MAX_DEPOSIT = 5000e6; // 5k USDT for new token
     uint256 private constant MIN_DEADLINE = 5 minutes;
     uint256 private constant MAX_DEADLINE = 1 hours;
@@ -113,6 +113,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
 
         _grantRole(GOVERNANCE_ROLE, msg.sender);
         _grantRole(EMERGENCY_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         usdtToken = IERC20(_usdtToken);
         qorafiToken = IERC20(_qorafiToken);
@@ -501,7 +502,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, ReentrancyGuar
     function estimateDeposit(uint256 usdtAmount) external view returns (uint256 estimatedQorafiOut, uint256 estimatedLPTokens) {
         uint256 usdtForSwap = Math.mulDiv(usdtAmount, MAX_BPS - liquidityRatioBPS, MAX_BPS);
         estimatedQorafiOut = _getExpectedSwapOutput(usdtForSwap);
-        estimatedLPTokens = Math.mulDiv(usdtAmount - usdtForSwap, 1e18, 1e6); // Simplified
+        estimatedLPTokens = Math.mulDiv(usdtAmount - usdtForSwap, 1e18, 1e18); // Simplified
         
         return (estimatedQorafiOut, estimatedLPTokens);
     }
