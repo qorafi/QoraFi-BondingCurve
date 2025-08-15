@@ -33,18 +33,18 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 │   │   ├── USQEngine.sol
 │   │   └── Oracle.sol
 │   ├── libraries/             # Shared utility and security libraries
-│   ├── Security Libraries (3 contracts):
-│   ├── MEVProtection.sol        
-│   ├── CircuitBreaker.sol       
-│   └── EmergencySystem.sol      
-├── Utility Libraries (5 contracts):
-│   ├── SwapUtilities.sol        
-│   ├── TokenUtilities.sol       
-│   ├── MathUtilities.sol       
-│   ├── StatisticsCore.sol       
-│   └── AnalyticsEngine.sol      
-└── Other Libraries:
-│    └── OracleLibraries.sol       
+│   ├── Security Libraries:
+│   │   └── MEVProtection.sol        
+│   │   └── CircuitBreaker.sol       
+│   │   └── EmergencySystem.sol      
+│   ├── Utility Libraries:
+│   │   └── SwapUtilities.sol        
+│   │   └── TokenUtilities.sol       
+│   │   └── MathUtilities.sol       
+│   │   └── StatisticsCore.sol       
+│   │   └── AnalyticsEngine.sol      
+│   └── Other Libraries:
+│   │  └── OracleLibraries.sol       
 │   ├── interfaces/            # General protocol interfaces
 │   │   └── SecurityInterfaces.sol
 │   ├── mocks/                 # Mock contracts for testing
@@ -362,6 +362,7 @@ For questions about the testing framework:
 
 
 🛡️ **Security First**: This testing framework prioritizes security validation to ensure the DeFi protocol is robust, reliable, and ready for production deployment.
+
 
 
 
