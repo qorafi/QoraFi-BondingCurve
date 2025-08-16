@@ -44,13 +44,6 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 │   │   └── OracleLibraries.sol       
 │   ├── interfaces/            # General protocol interfaces
 │   │   └── SecurityInterfaces.sol
-│   ├── mocks/                 # Mock contracts for testing
-│   │   ├── MockERC20.sol
-│   │   ├── MockRouter.sol
-│   │   └── MockUniswapV2Pair.sol
-│   └── legacy/                # Old, monolithic contract versions for reference
-│   │   ├── BondingCurve.sol
-│   │   └── MarketOracle.sol│  
 │   └── tokens/                # Old, monolithic contract versions for reference
 │   │    ├── QoraFi.sol 
 │   └── tokenomics/                # Old, monolithic contract versions for reference
@@ -359,6 +352,7 @@ For questions about the testing framework:
 
 
 🛡️ **Security First**: This testing framework prioritizes security validation to ensure the DeFi protocol is robust, reliable, and ready for production deployment.
+
 
 
 
