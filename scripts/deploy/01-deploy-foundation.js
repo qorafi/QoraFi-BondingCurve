@@ -1,17 +1,17 @@
-// scripts/deploy/01-deploy-foundation.js
+// scripts/deploy/01-deploy-foundation.js - PRODUCTION READY
 const { ethers } = require("hardhat");
 const hre = require("hardhat");
 const fs = require("fs");
 
 async function main() {
-  console.log("🚀 PHASE 1: Deploying Foundation Contracts...");
+  console.log("🚀 PHASE 1: Deploying Foundation Contracts (Production Ready)...");
   
   const network = hre.network.name;
   console.log(`🌐 Network: ${network}`);
   
   const signers = await ethers.getSigners();
   const deployer = signers[0];
-  const treasury = deployer; // Use deployer as treasury initially
+  const treasury = deployer;
   
   console.log(`👤 Deployer: ${deployer.address}`);
   console.log(`💰 Treasury: ${treasury.address}`);
@@ -23,6 +23,22 @@ async function main() {
     throw new Error("❌ Insufficient BNB for deployment. Need at least 0.05 BNB");
   }
 
+  // Real BSC addresses
+  const BSC_ADDRESSES = {
+    mainnet: {
+      USDT: "0x55d398326f99059fF775485246999027B3197955",
+      PANCAKE_ROUTER: "0x10ED43C718714eb63d5aA57B78B54704E256024E",
+      PANCAKE_FACTORY: "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73",
+      WBNB: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+    },
+    testnet: {
+      USDT: "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd",
+      PANCAKE_ROUTER: "0xD99D1c33F9fC3444f8101754aBC46c52416550D2",
+      PANCAKE_FACTORY: "0x6725F303b657a9451d8BA641348b6761A6CC7a17",
+      WBNB: "0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd"
+    }
+  };
+
   const deploymentInfo = {
     phase: "1-foundation",
     timestamp: new Date().toISOString(),
@@ -33,14 +49,37 @@ async function main() {
     libraries: {},
     verification: {},
     errors: [],
-    externalContracts: {}
+    realAddresses: {}
   };
 
   try {
     // =========================================================================
-    // STEP 1: DEPLOY ALL INDIVIDUAL MODULAR LIBRARIES
+    // STEP 1: SET REAL BSC ADDRESSES
     // =========================================================================
-    console.log("\n📚 Step 1: Deploying All Individual Modular Libraries...");
+    console.log("\n🔗 Step 1: Setting Real BSC Addresses...");
+    
+    const isMainnet = network === "bsc" || network === "bsc-mainnet";
+    const isTestnet = network === "bscTestnet" || network === "bsc-testnet";
+    
+    if (isMainnet) {
+      deploymentInfo.realAddresses = BSC_ADDRESSES.mainnet;
+      console.log("🌐 Using BSC Mainnet addresses");
+    } else if (isTestnet) {
+      deploymentInfo.realAddresses = BSC_ADDRESSES.testnet;
+      console.log("🌐 Using BSC Testnet addresses");
+    } else {
+      throw new Error("❌ Unsupported network. Use bsc-mainnet or bsc-testnet");
+    }
+    
+    console.log("🔗 Real BSC contracts:");
+    Object.entries(deploymentInfo.realAddresses).forEach(([name, address]) => {
+      console.log(`   ${name}: ${address}`);
+    });
+
+    // =========================================================================
+    // STEP 2: DEPLOY ALL INDIVIDUAL MODULAR LIBRARIES
+    // =========================================================================
+    console.log("\n📚 Step 2: Deploying All Individual Modular Libraries...");
     
     // SECURITY LIBRARIES (3 individual libraries)
     console.log("\n🔒 Security Libraries:");
@@ -115,51 +154,6 @@ async function main() {
     console.log("✅ OracleLibraries:", deploymentInfo.libraries.OracleLibraries);
 
     // =========================================================================
-    // STEP 1.5: VERIFY ALL LIBRARY VERSIONS
-    // =========================================================================
-    console.log("\n🔍 Step 1.5: Verifying All Library Versions...");
-    try {
-      console.log("📚 Library Versions (Total: 9 libraries):");
-      console.log("🔒 Security Libraries:");
-      console.log(`   MEV Protection: ${await mevProtection.getLibraryVersion()}`);
-      console.log(`   Circuit Breaker: ${await circuitBreaker.getLibraryVersion()}`);
-      console.log(`   Emergency System: ${await emergencySystem.getLibraryVersion()}`);
-      console.log("🛠️ Utility Libraries:");
-      console.log(`   Swap Utilities: ${await swapUtilities.getLibraryVersion()}`);
-      console.log(`   Token Utilities: ${await tokenUtilities.getLibraryVersion()}`);
-      console.log(`   Math Utilities: ${await mathUtilities.getLibraryVersion()}`);
-      console.log(`   Statistics Core: ${await statisticsCore.getLibraryVersion()}`);
-      console.log(`   Analytics Engine: ${await analyticsEngine.getLibraryVersion()}`);
-      console.log("🔮 Oracle Libraries:");
-      console.log(`   Oracle Libraries: ${await oracleLibraries.getLibraryVersion()}`);
-    } catch (error) {
-      console.log("⚠️ Could not fetch library versions:", error.message);
-      deploymentInfo.errors.push({
-        phase: "LIBRARY_VERSION_CHECK",
-        error: error.message
-      });
-    }
-
-    // =========================================================================
-    // STEP 2: REFERENCE EXISTING CONTRACTS
-    // =========================================================================
-    console.log("\n🔗 Step 2: Referencing External Contracts...");
-    
-    // Store external contract addresses from .env for reference
-    deploymentInfo.externalContracts = {
-      usdt: process.env.USDT_ADDRESS,
-      pancakeRouter: process.env.PANCAKE_ROUTER_ADDRESS,
-      pancakeFactory: process.env.PANCAKE_FACTORY_ADDRESS,
-      wbnb: process.env.WBNB_ADDRESS
-    };
-    
-    console.log("🔗 External contracts from .env:");
-    console.log(`   USDT: ${deploymentInfo.externalContracts.usdt}`);
-    console.log(`   PancakeRouter: ${deploymentInfo.externalContracts.pancakeRouter}`);
-    console.log(`   PancakeFactory: ${deploymentInfo.externalContracts.pancakeFactory}`);
-    console.log(`   WBNB: ${deploymentInfo.externalContracts.wbnb}`);
-
-    // =========================================================================
     // STEP 3: DEPLOY BASIC TOKENS
     // =========================================================================
     console.log("\n🪙 Step 3: Deploying Basic Tokens...");
@@ -189,57 +183,47 @@ async function main() {
     // =========================================================================
     console.log("\n🔍 Step 4: Verifying All Contracts and Libraries...");
     
-    // Skip verification for local development networks only
-    if (network === "localhost" || network === "hardhat") {
-      console.log("⚠️ Skipping verification - local development network");
-    } else {
-      console.log(`🔍 Starting verification on ${network}...`);
-      
-      const contractsToVerify = [
-        // ALL INDIVIDUAL LIBRARIES (9 total)
-        // Security Libraries (3)
-        { name: "MEVProtection", address: deploymentInfo.libraries.MEVProtection, args: [] },
-        { name: "CircuitBreaker", address: deploymentInfo.libraries.CircuitBreaker, args: [] },
-        { name: "EmergencySystem", address: deploymentInfo.libraries.EmergencySystem, args: [] },
-        // Utility Libraries (5)
-        { name: "SwapUtilities", address: deploymentInfo.libraries.SwapUtilities, args: [] },
-        { name: "TokenUtilities", address: deploymentInfo.libraries.TokenUtilities, args: [] },
-        { name: "MathUtilities", address: deploymentInfo.libraries.MathUtilities, args: [] },
-        { name: "StatisticsCore", address: deploymentInfo.libraries.StatisticsCore, args: [] },
-        { name: "AnalyticsEngine", address: deploymentInfo.libraries.AnalyticsEngine, args: [] },
-        // Oracle Libraries (1)
-        { name: "OracleLibraries", address: deploymentInfo.libraries.OracleLibraries, args: [] },
-        // Tokens (2)
-        { name: "QoraFi", address: deploymentInfo.contracts.qorafiToken, args: ["QoraFi", "QORAFI", treasury.address] },
-        { name: "contracts/usq/USQ.sol:USQ", address: deploymentInfo.contracts.usqToken, args: [] },
-      ];
+    const contractsToVerify = [
+      // ALL INDIVIDUAL LIBRARIES (9 total)
+      { name: "MEVProtection", address: deploymentInfo.libraries.MEVProtection, args: [] },
+      { name: "CircuitBreaker", address: deploymentInfo.libraries.CircuitBreaker, args: [] },
+      { name: "EmergencySystem", address: deploymentInfo.libraries.EmergencySystem, args: [] },
+      { name: "SwapUtilities", address: deploymentInfo.libraries.SwapUtilities, args: [] },
+      { name: "TokenUtilities", address: deploymentInfo.libraries.TokenUtilities, args: [] },
+      { name: "MathUtilities", address: deploymentInfo.libraries.MathUtilities, args: [] },
+      { name: "StatisticsCore", address: deploymentInfo.libraries.StatisticsCore, args: [] },
+      { name: "AnalyticsEngine", address: deploymentInfo.libraries.AnalyticsEngine, args: [] },
+      { name: "OracleLibraries", address: deploymentInfo.libraries.OracleLibraries, args: [] },
+      // Tokens (2)
+      { name: "QoraFi", address: deploymentInfo.contracts.qorafiToken, args: ["QoraFi", "QORAFI", treasury.address] },
+      { name: "contracts/usq/USQ.sol:USQ", address: deploymentInfo.contracts.usqToken, args: [] },
+    ];
 
-      console.log(`📋 Total contracts/libraries to verify: ${contractsToVerify.length}`);
+    console.log(`📋 Total contracts/libraries to verify: ${contractsToVerify.length}`);
 
-      for (const contract of contractsToVerify) {
-        try {
-          console.log(`🔍 Verifying ${contract.name} on ${network}...`);
-          await hre.run("verify:verify", {
-            address: contract.address,
-            constructorArguments: contract.args,
-          });
-          deploymentInfo.verification[contract.name] = "SUCCESS";
-          console.log(`✅ ${contract.name} verified on BSCScan`);
-        } catch (error) {
-          console.log(`⚠️ ${contract.name} verification failed:`, error.message);
-          deploymentInfo.verification[contract.name] = error.message;
-        }
+    for (const contract of contractsToVerify) {
+      try {
+        console.log(`🔍 Verifying ${contract.name} on ${network}...`);
+        await hre.run("verify:verify", {
+          address: contract.address,
+          constructorArguments: contract.args,
+        });
+        deploymentInfo.verification[contract.name] = "SUCCESS";
+        console.log(`✅ ${contract.name} verified on BSCScan`);
+      } catch (error) {
+        console.log(`⚠️ ${contract.name} verification failed:`, error.message);
+        deploymentInfo.verification[contract.name] = error.message;
       }
     }
 
     // =========================================================================
-    // FINALIZE PHASE 1 - COMPLETE SUMMARY
+    // FINALIZE PHASE 1
     // =========================================================================
     deploymentInfo.summary = {
       phase: "1-foundation",
       totalLibraries: Object.keys(deploymentInfo.libraries).length,
       totalContracts: Object.keys(deploymentInfo.contracts).length,
-      externalContracts: Object.keys(deploymentInfo.externalContracts).length,
+      realAddresses: Object.keys(deploymentInfo.realAddresses).length,
       verificationSuccess: Object.values(deploymentInfo.verification).filter(v => v === "SUCCESS").length,
       verificationTotal: Object.keys(deploymentInfo.verification).length,
       errors: deploymentInfo.errors.length,
@@ -249,9 +233,9 @@ async function main() {
       deploymentTime: new Date().toISOString(),
       libraryArchitecture: "modular-individual",
       libraryBreakdown: {
-        securityLibraries: 3, // MEVProtection, CircuitBreaker, EmergencySystem
-        utilityLibraries: 5,  // SwapUtilities, TokenUtilities, MathUtilities, StatisticsCore, AnalyticsEngine  
-        oracleLibraries: 1,   // OracleLibraries
+        securityLibraries: 3,
+        utilityLibraries: 5,
+        oracleLibraries: 1,
         totalIndividual: 9
       }
     };
@@ -267,7 +251,7 @@ async function main() {
     console.log(`📁 Deployment saved to: ${fileName}`);
     console.log(`📚 Libraries deployed: ${deploymentInfo.summary.totalLibraries} (9 total)`);
     console.log(`📋 Contracts deployed: ${deploymentInfo.summary.totalContracts}`);
-    console.log(`🔗 External contracts referenced: ${deploymentInfo.summary.externalContracts}`);
+    console.log(`🔗 Real BSC addresses: ${deploymentInfo.summary.realAddresses}`);
     console.log(`✅ Verifications: ${deploymentInfo.summary.verificationSuccess}/${deploymentInfo.summary.verificationTotal}`);
 
     console.log("\n🌟 ALL DEPLOYED LIBRARIES (9 total):");
@@ -289,22 +273,15 @@ async function main() {
       console.log(`   ✅ ${name}: ${address}`);
     });
 
-    console.log("\n🔗 External Contracts (from .env):");
-    Object.entries(deploymentInfo.externalContracts).forEach(([name, address]) => {
+    console.log("\n🔗 Real BSC Contracts:");
+    Object.entries(deploymentInfo.realAddresses).forEach(([name, address]) => {
       console.log(`   🔗 ${name}: ${address}`);
     });
 
-    console.log("\n📊 Library Architecture Summary:");
-    console.log(`   🔒 Security Libraries: ${deploymentInfo.summary.libraryBreakdown.securityLibraries}`);
-    console.log(`   🛠️ Utility Libraries: ${deploymentInfo.summary.libraryBreakdown.utilityLibraries}`);
-    console.log(`   🔮 Oracle Libraries: ${deploymentInfo.summary.libraryBreakdown.oracleLibraries}`);
-    console.log(`   📚 Total Individual Libraries: ${deploymentInfo.summary.libraryBreakdown.totalIndividual}`);
-
     console.log("\n📝 Next Steps:");
     console.log("   1. Run Phase 2: Core Infrastructure");
-    console.log("   2. Update hardhat.config.js with library addresses if needed");
-    console.log("   3. Save these addresses for next deployment phase");
-    console.log("   4. All 9 libraries are now modular and individually deployable");
+    console.log("   2. All 9 libraries are ready for linking");
+    console.log("   3. Real BSC contracts will be used");
 
   } catch (error) {
     console.error("\n❌ Phase 1 deployment failed:", error);
@@ -324,10 +301,6 @@ main()
   .then(() => {
     console.log("\n🎊 Phase 1 deployment completed successfully!");
     console.log("🚀 Ready for Phase 2: Core Infrastructure!");
-    console.log("📚 All 9 libraries deployed in modular architecture!");
-    console.log("   🔒 3 Security Libraries");
-    console.log("   🛠️ 5 Utility Libraries"); 
-    console.log("   🔮 1 Oracle Library");
     process.exit(0);
   })
   .catch((error) => {
