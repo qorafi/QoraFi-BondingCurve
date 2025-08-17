@@ -6,30 +6,30 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 
 ```
 ├── contracts/
-│   ├── core/                  # Core protocol logic & main token
+│   ├── core/                
 │   │   ├── QoraFi.sol
 │   │   ├── CoreSecurityManager.sol
 │   │   ├── EnhancedBondingCurve.sol
 │   │   └── EnhancedOracle.sol
-│   ├── governance/            # DAO governance contracts
+│   ├── governance/           
 │   │   ├── QoraFiGovernor.sol
 │   │   └── QoraFiTimelock.sol
-│   ├── rewards/               # Referral and reward distribution logic
+│   ├── rewards/             
 │   │   ├── DelegatorDistributor.sol
 │   │   └── DelegatorNodeRewardsLedger.sol
-│   ├── staking/               # Proof of Liquidity staking contracts
+│   ├── staking/             
 │   │   ├── ProofOfLiquidity.sol
 │   │   └── RewardEngine.sol
-│   ├── rwa/                   # Real World Asset tokenization contracts
+│   ├── rwa/                
 │   │   ├── RWAFactory.sol
 │   │   ├── RWA_Wrapper_ERC20.sol
 │   │   ├── QoraFiRWA.sol
 │   │   └── interfaces.sol
-│   ├── usq/                   # USQ Stablecoin contracts
+│   ├── usq/                  
 │   │   ├── USQ.sol
 │   │   ├── USQEngine.sol
 │   │   └── Oracle.sol
-│   ├── libraries/             # Shared utility and security libraries
+│   ├── libraries/             
 │   ├── Security Libraries:
 │   │   └── MEVProtection.sol        
 │   │   └── CircuitBreaker.sol       
@@ -42,13 +42,20 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 │   │   └── AnalyticsEngine.sol      
 │   └── Other Libraries:
 │   │   └── OracleLibraries.sol       
-│   ├── interfaces/            # General protocol interfaces
+│   ├── interfaces/           
 │   │   └── SecurityInterfaces.sol
-│   └── tokens/                # Old, monolithic contract versions for reference
+│   │   └──IQoraFiToken.sol
+│   │   └──IQoraFiLaunchpadFactory.sol
+│   └── tokens/                
 │   │    ├── QoraFi.sol 
-│   └── tokenomics/                # Old, monolithic contract versions for reference
+│   └── tokenomics/               
 │       ├── QoraFiAirdrop.sol
-│       ├── QoraFiVesting.sol  
+│       ├── QoraFiVesting.sol
+│   └── launchpad/
+│       ├── QoraFiToken.sol
+│       ├── QoraFiLaunchpadFactory.sol
+│
+├── scripts/  
 │
 ├── scripts/
 │   ├── deploy/                # Deployment scripts
@@ -352,6 +359,7 @@ For questions about the testing framework:
 
 
 🛡️ **Security First**: This testing framework prioritizes security validation to ensure the DeFi protocol is robust, reliable, and ready for production deployment.
+
 
 
 
