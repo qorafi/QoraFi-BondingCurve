@@ -24,7 +24,6 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 │   │   ├── RWAFactory.sol
 │   │   ├── RWA_Wrapper_ERC20.sol
 │   │   ├── QoraFiRWA.sol
-│   │   └── interfaces.sol
 │   ├── usq/                  
 │   │   ├── USQ.sol
 │   │   ├── USQEngine.sol
@@ -46,6 +45,7 @@ A comprehensive testing suite for the modular DeFi protocol with advanced securi
 │   │   └── SecurityInterfaces.sol
 │   │   └──IQoraFiToken.sol
 │   │   └──IQoraFiLaunchpadFactory.sol
+│   │   └──IRwaInterfaces.sol
 │   └── tokens/                
 │   │    ├── QoraFi.sol 
 │   └── tokenomics/               
@@ -359,6 +359,7 @@ For questions about the testing framework:
 
 
 🛡️ **Security First**: This testing framework prioritizes security validation to ensure the DeFi protocol is robust, reliable, and ready for production deployment.
+
 
 
 
