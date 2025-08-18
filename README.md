@@ -233,7 +233,7 @@ Token Generation: Mint QOR on claim (not pre-existing pool)
 
 #### **Staking Mechanics:**
 - **Minimum Stake Duration:** 24 hours (1 day)
-- **Emergency Unstake:** Available with 10% penalty on accrued rewards  
+- **Emergency Unstake:** Available with 0% penalty on accrued rewards  
 - **Daily Compounding:** 0.5% daily rate on USD value until claimed
 - **Quarterly Reduction:** 10% reduction every quarter (sustainability model)
 - **Token Minting:** Fresh QOR tokens minted when user claims rewards
