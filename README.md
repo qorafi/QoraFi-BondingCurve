@@ -1,5 +1,12 @@
 # Universal Bonding Curve Protocol
 
+<p align="center">
+    
+<img width="1024" height="1024" alt="Qorafi_LP" src="https://github.com/user-attachments/assets/28f27579-cf62-44d6-98bf-8fd2f4ef11ab" />
+
+</p>
+
+
 ## The Next-Generation Liquidity Provision Infrastructure
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -279,12 +286,12 @@ function calculateImpermanentLoss(
 ┌─────────────────────────────────────────────────────┐
 │                Security Status                      │
 ├─────────────────────────────────────────────────────┤
-│ MEV Attacks Blocked:        1,247                  │
-│ Flash Loans Detected:         23                   │
-│ Circuit Breaker Triggers:      3                   │
-│ Malicious Users Flagged:      89                   │
-│ Average Response Time:      0.8s                   │
-│ Security Score:            95/100                  │
+│ MEV Attacks Blocked:        1,247                   │
+│ Flash Loans Detected:         23                    │
+│ Circuit Breaker Triggers:      3                    │
+│ Malicious Users Flagged:      89                    │
+│ Average Response Time:      0.8s                    │
+│ Security Score:            95/100                   │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -562,12 +569,12 @@ curl -X GET "https://api.universalbonding.io/quote" \
 ┌─────────────────────────────────────────────────────┐
 │              Universal Bonding Protocol             │
 ├─────────────────────────────────────────────────────┤
-│ Total Value Locked:     $127,543,291               │
-│ 24h Volume:             $8,392,847                 │
+│ Total Value Locked:     $127,543,291                │
+│ 24h Volume:             $8,392,847                  │
 │ Active Users:           23,847                      │
 │ Unique Pairs:           1,247                       │
 │ Success Rate:           99.94%                      │
-│ Avg Gas Saved:          35%                        │
+│ Avg Gas Saved:          35%                         │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -660,25 +667,7 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 **This software is provided "as is" and any express or implied warranties are disclaimed. Users should conduct their own research and risk assessment before using the protocol. Cryptocurrency investments carry inherent risks.**
 
----
 
-## Contact and Support
-
-**Protocol Team:**
-- **Lead Developer**: [GitHub](https://github.com/lead-dev)
-- **Security Lead**: [GitHub](https://github.com/security-lead)
-- **Business Development**: contact@universalbonding.io
-
-**Community:**
-- **General Support**: support@universalbonding.io
-- **Partnership Inquiries**: partnerships@universalbonding.io
-- **Security Issues**: security@universalbonding.io
-
----
-
-*Built with ❤️ for the DeFi community. Making liquidity provision accessible, secure, and profitable for everyone.*
-
----
 
 ## 📞 **Contact & Resources**
 
@@ -718,3 +707,4 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 *This project is open-source under MIT License*
 
 </div>
+
